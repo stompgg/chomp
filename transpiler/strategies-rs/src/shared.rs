@@ -1,20 +1,19 @@
-//! Port of the `HeuristicCPUBase.sol` helpers hard/greedy actually reach
-//! (`sims/src/cpu/heuristic-shared.ts`). TS helpers neither strategy calls
-//! (mode ladder, fair-info pool analysis, random-option pick, …) are
-//! deliberately not ported. Every branch/threshold/formula matches the TS
-//! source; integer math stays integral (i64), `Math.floor(int/int)` sites
-//! reproduce the JS f64 division + floor (identical results at these
-//! magnitudes, and bit-exact by construction).
+//! Shared scoring primitives hard/greedy actually reach: damage estimation,
+//! KO / best-damage move finders, lead and switch selection. Helpers neither
+//! strategy calls (the old mode ladder, fair-info pool analysis,
+//! random-option pick, …) are deliberately absent. Integer math stays
+//! integral (i64); `Math.floor(int/int)` sites reproduce the JS f64 division
+//! + floor (identical results at these magnitudes).
 
-use chomp_engine::moves::{AttackCalculator, MoveSlotLib};
+use chomp_engine::moves::AttackCalculator;
 use chomp_engine::Enums::{MonStateIndexName, MoveClass, Type};
 use chomp_engine::Structs::{DamageCalcContext, MoveMeta};
 use chomp_rt::{Address, B256, U256};
 
 use crate::sim::Sim;
 use crate::view::{
-    mon_current_hp, mon_max_hp, mon_state, mon_stats, mon_value, move_slot, slot_external_base_power,
-    slot_move_class, slot_move_type, type_effectiveness, Mv, Seat, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    decode_meta, mon_current_hp, mon_max_hp, mon_state, mon_stats, mon_value, move_slot,
+    slot_move_class, type_effectiveness, Mv, Seat, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
 /// JS Number.MAX_SAFE_INTEGER — the TS sentinel for "least-of" scans.
@@ -110,19 +109,17 @@ pub fn estimate_damage(
     sim: &mut Sim,
     bk: B256,
     ctx: &mut DamageCalcContext,
+    vp: u8,
+    mon: usize,
     raw_move_slot: U256,
-    move_class: MoveClass,
 ) -> i64 {
-    let base_power = if MoveSlotLib::isInline(raw_move_slot) {
-        MoveSlotLib::basePower(raw_move_slot, bk)
-    } else {
-        slot_external_base_power(sim, bk, raw_move_slot)
-    };
-    if base_power == 0 {
+    // getMeta is the interface every move implements, so it reads dynamic power the legacy
+    // basePower(battleKey) probe couldn't see (it missed any move not declaring that exact shape).
+    let meta = decode_meta(sim, bk, vp, mon, raw_move_slot);
+    if meta.basePower == 0 {
         return 0;
     }
-    let move_type = slot_move_type(sim, bk, raw_move_slot);
-    deterministic_damage(ctx, base_power, move_type, move_class)
+    deterministic_damage(ctx, meta.basePower, meta.moveType, meta.moveClass)
 }
 
 /// Port of `_estimateDamageMeta`: like estimate_damage off a pre-decoded meta.
@@ -134,12 +131,8 @@ pub fn estimate_damage_meta(ctx: &mut DamageCalcContext, meta: &MoveMeta) -> i64
 }
 
 /// Port of `_getMoveBasePower`: basePower of a raw slot, 0 for non-attacks.
-pub fn get_move_base_power(sim: &mut Sim, bk: B256, raw_move_slot: U256) -> i64 {
-    if MoveSlotLib::isInline(raw_move_slot) {
-        MoveSlotLib::basePower(raw_move_slot, bk) as i64
-    } else {
-        slot_external_base_power(sim, bk, raw_move_slot) as i64
-    }
+pub fn get_move_base_power(sim: &mut Sim, bk: B256, vp: u8, mon: usize, raw_move_slot: U256) -> i64 {
+    decode_meta(sim, bk, vp, mon, raw_move_slot).basePower as i64
 }
 
 // ---------------------------------------------------------------------------
@@ -309,12 +302,12 @@ pub fn select_best_switch(
 
     // Read the revealed move; only Physical/Special are estimable.
     let slot = move_slot(sim, seat, bk, VOPP, opponent_mon_index, opponent_move_index as usize);
-    let (opp_move_slot, opp_move_class, can_estimate) = match slot {
+    let (opp_move_slot, can_estimate) = match slot {
         Some(s) => {
             let mc = slot_move_class(sim, bk, s);
-            (s, mc, mc == MoveClass::Physical || mc == MoveClass::Special)
+            (s, mc == MoveClass::Physical || mc == MoveClass::Special)
         }
-        None => (U256::ZERO, MoveClass::Physical, false),
+        None => (U256::ZERO, false),
     };
     if !can_estimate {
         return switches[0];
@@ -328,7 +321,7 @@ pub fn select_best_switch(
         let mut ctx = build_damage_calc_context(
             sim, seat, bk, VOPP, opponent_mon_index, VCPU, candidate_mon_index,
         );
-        let dmg = estimate_damage(sim, bk, &mut ctx, opp_move_slot, opp_move_class);
+        let dmg = estimate_damage(sim, bk, &mut ctx, VOPP, opponent_mon_index, opp_move_slot);
         if dmg < least_damage {
             least_damage = dmg;
             best_idx = i;

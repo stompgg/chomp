@@ -28,7 +28,9 @@ transpiler/
   transpiler-config-rust.json   includeFiles allowlist + world/dispatch config
   runtime-rs/            hand-written chomp-rt crate (source of truth; synced to rs-output/runtime)
   strategies-rs/         native CPU strategies + game loop + the standalone arena
-                         (bins: `arena` win-rate table, `trace` behavioural analysis + counterfactual)
+                         (bins: `arena` win-rate table, `trace` behavioural analysis + counterfactual,
+                          `analyze` per-mon win%/KO matrix, `montrace` one mon's doubles diagnostic,
+                          `teams` exhaustive team search + main effect; see BENCH.md)
   rs-output/             GENERATED cargo workspace (gitignored, like ts-output)
 ```
 
@@ -61,6 +63,13 @@ substrate. What still runs:
 
 - `cargo run --release -p chomp-strategies --bin arena -- --games 6000`
   — whole-game batches on the native stack, win-rate table + games/s.
+- The roster loads from `$CHOMP_ROOT`'s `drool/*.csv` + `src/mons/*.json` at
+  run time, so data edits need no rebuild. A move or ability whose name
+  doesn't resolve to a contract is reported on stderr rather than silently
+  dropped — a dropped lane shortens the catalog and `build_team_mon` pads it
+  by repeating the last move, quietly changing the mon being measured.
+- `analyze` / `teams` take `--progress` to stream partial standings to stderr;
+  results are byte-identical with and without it.
 - `chomp-rt` / `chomp-strategies` unit tests pin ABI/keccak/shift/pow
   and the mulberry32 golden stream standalone (`cargo test`).
 - `python3 -m unittest transpiler.test_transpiler` — TS target unaffected.
@@ -119,5 +128,5 @@ substrate. What still runs:
   bins) that loads the roster from `drool/*.csv` + `src/mons/*.json` at
   runtime. The Rust side may diverge from TS freely (rng stream and CPU
   decisions included); port-backs to the game's CPU mode carry no
-  bit-identicality requirement. The TS arena driver
-  (`sims/src/arena/game.ts`) remains as the port-back reference.
+  bit-identicality requirement. Ports land in munch and are gated there
+  against `sim-tests/arena/cpu-reference.json`.

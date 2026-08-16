@@ -13,10 +13,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
  *         Engine rejects direct stat writes (stats are owned by the inlined stat-boost system).
  */
 contract DirectStatWriteMove is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Direct Stat Write";
-    }
-
     function move(
         IEngine engine,
         bytes32,

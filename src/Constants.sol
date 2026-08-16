@@ -47,18 +47,21 @@ uint256 constant EFFECT_COUNT_MASK = 0x3F; // 6 bits = max count of 63
 
 address constant TOMBSTONE_ADDRESS = address(0xdead);
 
-// Sentinel effect address used for inlined stat-boost entries. Boost sources are stored in the
-// normal per-mon effect mappings under this address; the Engine recognizes it and runs the
-// inlined stat-boost switch-out logic instead of making an external IEffect call (mirrors the
-// address(0) StaminaRegen inline path). It is never a real deployed contract.
-address constant STAT_BOOST_ADDRESS = address(0x57B); // "STB" - stat boost
-// Steps bitmap stored on inlined stat-boost effect entries: ALWAYS_APPLIES | OnMonSwitchOut (bit 5).
-// Matches the legacy StatBoosts.getStepsBitmap() (0x8020) so view/round-trip behavior is unchanged.
-uint16 constant STAT_BOOST_STEPS = 0x8020;
-
 // Sentinel ruleset address: when passed as battle.ruleset, the Engine adds
 // inline StaminaRegen as a global effect without calling an external contract.
+// Also valid as a marker ENTRY in a ruleset's effect array (see INLINE_REST_REGEN_MARKER),
+// which is how a ruleset carrying real global effects keeps the inline regen path.
 address constant INLINE_STAMINA_REGEN_RULESET = address(0x57A); // "STA"mina
+
+// Marker entry for a ruleset that wants only the resting (NO_OP AfterMove) half of inline regen —
+// for global effects that own round-end stamina themselves. Marker entries are folded into
+// BattleConfig.inlineRegenFlags at startBattle and are never stored or called.
+address constant INLINE_REST_REGEN_MARKER = address(0x57B);
+
+// BattleConfig.inlineRegenFlags bits: which halves of the Engine's inline stamina regen run.
+uint8 constant INLINE_REGEN_REST = 0x1; // AfterMove, when the mon rested (NO_OP)
+uint8 constant INLINE_REGEN_ROUND_END = 0x2; // RoundEnd, on full two-player turns
+uint8 constant INLINE_REGEN_ALL = INLINE_REGEN_REST | INLINE_REGEN_ROUND_END;
 
 // Sentinel moveManager address: when a battle's moveManager is set to this, the battle uses the
 // Engine's built-in dual-signed buffer flow (submitTurnMoves / executeBuffered) instead of an
@@ -67,6 +70,23 @@ address constant BUILTIN_DUAL_SIGNED_MANAGER = address(0x5165); // "SIGS" - buil
 
 // Bit 15 of stepsBitmap: when set, Engine skips the external shouldApply() call
 uint16 constant ALWAYS_APPLIES_BIT = 0x8000;
+
+// Bits 10-13 of stepsBitmap: exclusive-status class (0 = not a status; 1-14 = a deployable
+// status class; 15 is reserved for test-only mocks and rejected in src/ by the validator).
+// Each status declares its own id (an internal STATUS_CLASS constant folded into its
+// getStepsBitmap()); validateEffectBitmaps.py asserts uniqueness across src/. The Engine keys
+// the per-mon status lane (BattleConfig.monStatusLanes) off these bits — it holds no status list.
+uint256 constant STATUS_CLASS_SHIFT = 10;
+uint256 constant STATUS_CLASS_MASK = 0xF;
+
+// Bit 14 of stepsBitmap: when set, Engine calls onReapply() on a same-class re-apply
+// (escalating statuses, e.g. Burn). Clear = a same-class re-apply is a zero-call no-op.
+uint16 constant HAS_REAPPLY_BIT = 0x4000;
+
+// getStepsBitmap metadata: lifecycle steps remain in the low 16 bits; the high 16 bits opt an
+// effect into fresh per-step hook context. The EVM selector is unchanged from the legacy uint16
+// return, and legacy deployed effects decode as metadata with a zero context half.
+uint256 constant EFFECT_CONTEXT_SHIFT = 16;
 
 uint256 constant MAX_BATTLE_DURATION = 1 hours;
 
@@ -116,12 +136,14 @@ uint8 constant BATTLE_MODE_DOUBLES = 1;
 uint8 constant BATTLE_MODE_MULTI = 2;
 
 // Deployed-move word with packed static metadata: [address 0-159 | tag bit 160 |
-// stamina 236-239 | priority 244-247]. The nibble value 0xF means "battle/state-dependent —
+// context capabilities 161+ | stamina 236-239 | priority 244-247]. The nibble value 0xF means "battle/state-dependent —
 // staticcall the move live" (Rock Pull's punisher priority, HeatBeacon-boosted casts,
 // Unbounded Strike's stamina). Inline move words never set bit 160 (their 160-227 range is
 // unused), so the tag cleanly three-ways the discriminator: tagged = deployed+meta,
 // untagged with high bits = inline, bare address = deployed without meta (legacy/tests).
 uint256 constant MOVE_META_TAG = 1 << 160;
+uint256 constant MOVE_CONTEXT_STATUS_LANES = 1 << 161;
+uint256 constant MOVE_RESOLVER_TAG = 1 << 162;
 uint256 constant MOVE_META_DYNAMIC = 0xF;
 
 // The 16-bit move extraData splits [targetBits 4 | movePayload 12]. The nibble is a bitmask

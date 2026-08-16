@@ -15,10 +15,6 @@ contract UpOnly is IAbility, BasicEffect {
     uint8 public constant ATTACK_BOOST_PERCENT = 10; // 10% attack boost per hit
 
     // IAbility implementation
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Up Only";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
@@ -32,7 +28,7 @@ contract UpOnly is IAbility, BasicEffect {
 
     // IEffect implementation
     // Steps: AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8040;
     }
 

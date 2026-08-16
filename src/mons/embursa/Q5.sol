@@ -24,10 +24,6 @@ contract Q5 is IMoveSet, BasicEffect {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Q5";
-    }
-
     function _packExtraData(
         uint256 turnCount,
         uint256 attackerPlayerIndex,
@@ -49,8 +45,8 @@ contract Q5 is IMoveSet, BasicEffect {
     }
 
     // Per-side (no monIndex) so only one Q5 can be queued per side at a time, unique across mons.
-    function _q5GuardKey(uint256 attackerPlayerIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(attackerPlayerIndex, "Q5_ACTIVE"))));
+    function _q5GuardKey(uint256 attackerPlayerIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(attackerPlayerIndex, address(this)))));
     }
 
     function move(
@@ -104,7 +100,7 @@ contract Q5 is IMoveSet, BasicEffect {
 
     // Effect implementation
     // Steps: RoundStart
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8002;
     }
 

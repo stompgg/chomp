@@ -11,10 +11,6 @@ import {IEffect} from "../../src/effects/IEffect.sol";
 /// Registers itself as an effect on switch-in with idempotency check.
 /// Tracks call count in extraData for testing.
 contract MockSingletonAbility is IAbility, BasicEffect {
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "MockSingleton";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
         for (uint256 i; i < effects.length; i++) {
@@ -26,7 +22,7 @@ contract MockSingletonAbility is IAbility, BasicEffect {
     }
 
     // Steps: AfterDamage (just to verify hooks run)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8040; // ALWAYS_APPLIES | AfterDamage
     }
 

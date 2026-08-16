@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
-import {MonStateIndexName} from "../Enums.sol";
 import {IEngine} from "../IEngine.sol";
 import {RNGLib} from "./RNGLib.sol";
 
@@ -22,14 +21,12 @@ library SwitchTargetLib {
     ) internal view returns (int32) {
         // Mix in target player index to break symmetry on mirror matchups
         uint256 offset = RNGLib.mixForAttacker(rng, playerIndex);
-        (uint256 lo, uint256 hi) = engine.getRosterBoundsForSlot(battleKey, playerIndex, slotIndex);
+        (uint256 lo, uint256 hi, uint256 koBitmap) = engine.getSlotSwitchWindow(battleKey, playerIndex, slotIndex);
         uint256 span = hi - lo;
         for (uint256 i; i < span; ++i) {
             uint256 candidate = lo + ((i + offset) % span);
             if (candidate != currentMonIndex && candidate != allyMonIndex) {
-                bool isKOed =
-                    engine.getMonStateForBattle(battleKey, playerIndex, candidate, MonStateIndexName.IsKnockedOut) == 1;
-                if (!isKOed) {
+                if ((koBitmap >> candidate) & 1 == 0) {
                     return int32(int256(candidate));
                 }
             }

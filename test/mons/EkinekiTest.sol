@@ -26,6 +26,7 @@ import {TestTypeCalculator} from "../mocks/TestTypeCalculator.sol";
 import {BubbleBop} from "../../src/mons/ekineki/BubbleBop.sol";
 import {NineNineNine} from "../../src/mons/ekineki/NineNineNine.sol";
 import {Overflow} from "../../src/mons/ekineki/Overflow.sol";
+import {NineNineNineLib} from "../../src/mons/ekineki/NineNineNineLib.sol";
 import {SaviorComplex} from "../../src/mons/ekineki/SaviorComplex.sol";
 import {SneakAttack} from "../../src/mons/ekineki/SneakAttack.sol";
 
@@ -334,7 +335,7 @@ contract EkinekiTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
 
         // Verify the 999 KV is set for the next turn
-        uint64 nineKey = uint64(uint256(keccak256(abi.encode(uint256(0), "NINE_NINE_NINE"))));
+        uint64 nineKey = NineNineNineLib._getKey(0);
         uint192 storedTurn = engine.getGlobalKV(battleKey, nineKey);
         uint256 currentTurn = engine.getTurnIdForBattleState(battleKey);
         assertEq(
@@ -627,7 +628,7 @@ contract EkinekiTest is Test, BattleHelper {
         // Mon 1 has no ability, so no savior complex trigger
         // But the savior complex on mon 0 should NOT have been consumed (it didn't trigger)
         // Verify by checking global KV is still 0
-        uint64 scKey = uint64(uint256(keccak256(abi.encode(uint256(0), "SAVIOR_COMPLEX"))));
+        uint64 scKey = uint64(uint256(keccak256(abi.encode(uint256(0), address(saviorComplex)))));
         uint192 scTriggered = engine.getGlobalKV(battleKey, scKey);
         assertEq(scTriggered, 0, "Savior Complex should not have been consumed with 0 KOs");
     }

@@ -9,12 +9,8 @@ import {BasicEffect} from "./BasicEffect.sol";
 /// @dev Singles test scaffolding: prod uses the engine-inline regen (which is slot-aware);
 ///      this external effect only regens each side's slot-0 lane in 2-slot battles.
 contract StaminaRegen is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "Stamina Regen";
-    }
-
     // Steps: RoundEnd, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8084;
     }
 

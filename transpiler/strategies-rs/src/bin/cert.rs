@@ -7,7 +7,8 @@
 use chomp_strategies::analysis::run_mon_analysis;
 use chomp_strategies::arena::build_team_mon;
 use chomp_strategies::evaluator::DEFAULT_WEIGHTS;
-use chomp_strategies::game::{play_game, GameSpec, StrategyKind};
+use chomp_strategies::bots;
+use chomp_strategies::game::{play_game, GameSpec, BotName};
 use chomp_strategies::matrix::compute_static_matrix;
 use chomp_strategies::roster::{self, load_roster};
 use std::path::PathBuf;
@@ -23,7 +24,7 @@ fn main() {
 
     // Check 1 — globalKV-class regression: fixed-model pilots draw ~never and never error. The
     // globalKV forward-model bug manifested as stall-loop draws (50–167 per 2000 pre-fix).
-    let a = run_mon_analysis(&roster, 4000, 0xbeefcafe, 10_000, default_threads);
+    let a = run_mon_analysis(&roster, 4000, 0xbeefcafe, 10_000, default_threads, None);
     let draw_rate = a.draws as f64 / a.games.max(1) as f64;
     let ok1 = draw_rate < 0.01 && a.errors == 0;
     println!("[1] draw rate {:.3}% (<1%), errors {} (0): {}", draw_rate * 100.0, a.errors, if ok1 { "PASS" } else { "FAIL" });
@@ -49,8 +50,9 @@ fn main() {
                     p1_team: vec![build_team_mon(&roster.mons[i])],
                     p0_ids: vec![m.ids[j]],
                     p1_ids: vec![m.ids[i]],
-                    p0_strategy: StrategyKind::Greedy,
-                    p1_strategy: StrategyKind::Greedy,
+                    p0_strategy: bots::GREEDY,
+                    p1_strategy: bots::GREEDY,
+                    peek_seat: None,
                     p0_weights: DEFAULT_WEIGHTS,
                     p1_weights: DEFAULT_WEIGHTS,
                     p0_search_depth: 0,
@@ -59,6 +61,8 @@ fn main() {
                     p1_search_peek: false,
                     p0_search_mixed: false,
                     p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
                 };
                 let o = play_game(&spec, &book, false);
                 checked += 1;

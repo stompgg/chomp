@@ -14,10 +14,6 @@ contract EternalGrudge is IMoveSet {
     uint8 public constant ATTACK_DEBUFF_PERCENT = 50;
     uint8 public constant SP_ATTACK_DEBUFF_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Eternal Grudge";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

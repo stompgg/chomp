@@ -20,11 +20,16 @@ use chomp_engine::Engine;
 use chomp_engine::Structs::{Mon, MoveMeta};
 use chomp_rt::{Address, B256, U256};
 
-use crate::jsrng::{random_salt, JsRng};
+use crate::bot::{Action, BattleMode, Bot, BotConfig, DecisionCtx};
+use crate::bots;
+use crate::jsrng::{derive, random_salt, JsRng, STREAM_P0, STREAM_P1, STREAM_SALT};
+use crate::heuristic::better_cpu_config;
 use crate::roster::{input_type_of, target_spec_of, InputType, TargetSpec};
-use crate::shared::{build_damage_calc_context, estimate_damage_meta};
+use crate::shared::{build_damage_calc_context, estimate_damage_meta, CONFIG_SETUP_MOVE};
 use crate::sim::{pack_side, Sim};
-use crate::view::{decode_meta, mon_current_stamina, mon_max_hp, mon_state, move_slot, turn_id, Seat};
+use crate::view::{
+    decode_meta, mon_current_stamina, mon_max_hp, mon_skip_turn, mon_state, move_slot, stat_delta_score, turn_id, Seat,
+};
 
 const SWITCH: u8 = 125;
 const NO_OP: u8 = 126;
@@ -155,13 +160,54 @@ fn damaging_options(sim: &mut Sim, bk: B256, cpu_side: u8, my_mon: u32) -> Vec<(
             if meta.moveClass != MoveClass::Physical && meta.moveClass != MoveClass::Special {
                 continue; // only weigh damaging moves
             }
-            let dmg = estimate_damage_meta(&mut ctx, meta);
-            if dmg > 0 {
-                options.push((SlotMove { move_index: *mi, extra_data: target_bits(t_abs) }, dmg));
-            }
+            let mv = SlotMove { move_index: *mi, extra_data: target_bits(t_abs) };
+            // A hand-written getMeta() may quote 0 for a move that does deal damage, so 0 means
+            // "unknown", not "harmless" — dropping it here empties the option set and leaves the slot
+            // resting all game. Simulate instead of trusting a declared number: nominal power is not
+            // damage-this-turn for delayed (Q5), multi-hit (Bubble Bop), or spent (Sneak Attack) moves.
+            let dmg = if meta.basePower != 0 {
+                estimate_damage_meta(&mut ctx, meta)
+            } else {
+                probe_damage(sim, bk, cpu_side, my_mon, mv, opp_side, t_mon)
+            };
+            options.push((mv, dmg));
         }
     }
     options
+}
+
+/// Exact damage for one (move, target), by simulating it: fork a turn where only `my_mon`'s slot
+/// acts and read how much HP the target actually lost. Used for moves whose power the static quote
+/// can't know; costs one fork, so it runs only on moves whose `getMeta()` quotes no power.
+fn probe_damage(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    my_mon: u32,
+    mv: SlotMove,
+    opp_side: u8,
+    t_mon: usize,
+) -> i64 {
+    let slots = active_slots(sim, bk);
+    let [a0, a1] = side_slots(cpu_side);
+    // Place the probed action on whichever of my slots holds the acting mon; everything else rests,
+    // so the observed HP change is attributable to this move alone.
+    let (m0, m1) = if slots[a0] == my_mon {
+        (mv, NO_OP_MOVE)
+    } else if slots[a1] == my_mon {
+        (NO_OP_MOVE, mv)
+    } else {
+        return 0; // not an active slot this turn
+    };
+    let mine = pack_side(m0.move_index, m0.extra_data, m1.move_index, m1.extra_data, 0);
+    let theirs = pack_side(NO_OP, 0, NO_OP, 0, 0);
+    let (side0, side1) = if cpu_side == 0 { (mine, theirs) } else { (theirs, mine) };
+
+    let before = mon_state(sim, OBS, bk, opp_side, t_mon, MonStateIndexName::Hp);
+    let fork = sim.apply_hypothetical_slot(bk, side0, side1);
+    let after = mon_state(sim, OBS, fork, opp_side, t_mon, MonStateIndexName::Hp);
+    sim.dispose_fork(fork);
+    (before - after).max(0) // hp deltas run negative; damage is how much further it fell
 }
 
 /// Greedy attack for one acting mon: the affordable damaging (move, target-slot) with the highest
@@ -210,7 +256,7 @@ pub fn pick_side_moves(
     let is_forced = flag != 2; // 2 == both slots take a normal action
     let mask = flag & 0x0f; // which absolute slots must forced-switch
     let slots = active_slots(sim, bk);
-    let team_size = u64::try_from(Engine::getTeamSize(&mut sim.world, bk, U256::from(cpu_side))).unwrap_or(0) as usize;
+    let team_size = sim.team_size_phys(U256::from(cpu_side));
 
     let m0 = decide_slot(sim, bk, cpu_side, difficulty, is_forced, mask, &slots, team_size, a0, rng);
     let m1 = decide_slot(sim, bk, cpu_side, difficulty, is_forced, mask, &slots, team_size, a1, rng);
@@ -265,8 +311,49 @@ const D_W_HP: f64 = 1.0;
 const D_W_KO: f64 = 150.0;
 const D_W_STAMINA: f64 = 2.0;
 
-fn team_size_of(sim: &mut Sim, bk: B256, side: u8) -> usize {
-    u64::try_from(Engine::getTeamSize(&mut sim.world, bk, U256::from(side))).unwrap_or(0) as usize
+/// Doubles eval weights. Defaults reproduce the frozen baseline (hp/ko/stamina, corpses counted),
+/// so every existing caller is unchanged; the extra terms exist to be A/B'd in the arena.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct DoublesEvalW {
+    pub w_hp: f64,
+    pub w_ko: f64,
+    pub w_stamina: f64,
+    /// Per Σ(delta/base) unit over a live active's five combat stats (the TS twin's 0.4-per-% ≡ 40 here).
+    pub w_boost: f64,
+    /// Per live opposing active carrying a status class, minus ours (statuses hurt their carrier).
+    pub w_status: f64,
+    /// Per live opposing active flagged ShouldSkipTurn, minus ours.
+    pub w_skip: f64,
+    /// Exclude KO'd actives from the per-active terms — a corpse holds its lane (and stat deltas)
+    /// until the forced switch, but its stamina/boosts/status are worth nothing.
+    pub gate_ko: bool,
+}
+
+impl Default for DoublesEvalW {
+    /// Mirrors the shipped munch `slot-search` eval: boosts at 0.4/pct (≡ 40 per
+    /// delta/base unit here) and corpse-gated active terms.
+    fn default() -> Self {
+        Self { w_boost: 40.0, gate_ko: true, ..Self::legacy() }
+    }
+}
+
+impl DoublesEvalW {
+    /// The old hp/ko/stamina-only baseline (corpses counted).
+    pub fn legacy() -> Self {
+        Self {
+            w_hp: D_W_HP,
+            w_ko: D_W_KO,
+            w_stamina: D_W_STAMINA,
+            w_boost: 0.0,
+            w_status: 0.0,
+            w_skip: 0.0,
+            gate_ko: false,
+        }
+    }
+}
+
+fn team_size_of(sim: &mut Sim, _bk: B256, side: u8) -> usize {
+    sim.team_size_phys(U256::from(side))
 }
 
 /// Σ hp% over a side's whole roster.
@@ -283,28 +370,49 @@ fn side_roster_hp(sim: &mut Sim, bk: B256, side: u8, team_size: usize) -> f64 {
     sum
 }
 
-/// Σ current stamina over a side's two active slots.
-fn side_active_stamina(sim: &mut Sim, bk: B256, side: u8, slots: &[u32; 4]) -> i64 {
-    let mut sum = 0;
+/// Per-active term sums (stamina, boost, status, skip) over a side's two active slots. Feature
+/// reads are skipped while their weight is 0 so the default eval costs what it always did.
+fn side_active_terms(sim: &mut Sim, bk: B256, side: u8, slots: &[u32; 4], w: &DoublesEvalW, ko: u32) -> (f64, f64, f64, f64) {
+    let (mut stam, mut boost, mut status, mut skip) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for &abs in &side_slots(side) {
         let mon = slots[abs];
-        if mon != EMPTY_LANE {
-            sum += mon_current_stamina(sim, OBS, bk, side, mon as usize);
+        if mon == EMPTY_LANE || (w.gate_ko && ko & (1 << mon) != 0) {
+            continue;
+        }
+        stam += mon_current_stamina(sim, OBS, bk, side, mon as usize) as f64;
+        if w.w_boost != 0.0 {
+            boost += stat_delta_score(sim, OBS, bk, side, mon as usize);
+        }
+        if w.w_status != 0.0
+            && Engine::getMonStatusClass(&mut sim.world, bk, U256::from(side), U256::from(mon)) != U256::from(0u64)
+        {
+            status += 1.0;
+        }
+        if w.w_skip != 0.0 && mon_skip_turn(sim, OBS, bk, side, mon as usize) {
+            skip += 1.0;
         }
     }
-    sum
+    (stam, boost, status, skip)
 }
 
 /// Linear 2-slot position value, `cpu_side`-perspective (higher = better).
-fn doubles_eval(sim: &mut Sim, bk: B256, cpu_side: u8) -> f64 {
+fn doubles_eval(sim: &mut Sim, bk: B256, cpu_side: u8, w: &DoublesEvalW) -> f64 {
     let opp_side = 1 - cpu_side;
     let cpu_ts = team_size_of(sim, bk, cpu_side);
     let opp_ts = team_size_of(sim, bk, opp_side);
     let hp = side_roster_hp(sim, bk, cpu_side, cpu_ts) - side_roster_hp(sim, bk, opp_side, opp_ts);
-    let ko = (ko_bitmap(sim, bk, opp_side).count_ones() as i64 - ko_bitmap(sim, bk, cpu_side).count_ones() as i64) as f64;
+    let my_ko = ko_bitmap(sim, bk, cpu_side);
+    let op_ko = ko_bitmap(sim, bk, opp_side);
+    let ko = (op_ko.count_ones() as i64 - my_ko.count_ones() as i64) as f64;
     let slots = active_slots(sim, bk);
-    let stam = (side_active_stamina(sim, bk, cpu_side, &slots) - side_active_stamina(sim, bk, opp_side, &slots)) as f64;
-    D_W_HP * hp + D_W_KO * ko + D_W_STAMINA * stam
+    let (my_stam, my_boost, my_status, my_skip) = side_active_terms(sim, bk, cpu_side, &slots, w, my_ko);
+    let (op_stam, op_boost, op_status, op_skip) = side_active_terms(sim, bk, opp_side, &slots, w, op_ko);
+    w.w_hp * hp
+        + w.w_ko * ko
+        + w.w_stamina * (my_stam - op_stam)
+        + w.w_boost * (my_boost - op_boost)
+        + w.w_status * (op_status - my_status)
+        + w.w_skip * (op_skip - my_skip)
 }
 
 /// Terminal value if a side is fully KO'd, else None. Mate-distance discounted:
@@ -333,16 +441,55 @@ fn legal_benches(team_size: usize, ko: u32, slots: &[u32; 4], abs_slot: usize) -
         .collect()
 }
 
+/// TS `clearMoveUsedBitsOnSwitchIn` with the doubles `side` param: clear the incoming mon's
+/// config lane bit; its setup lane bit only clears when it re-enters above half HP.
+fn clear_used_bits_on_switch_in(sim: &mut Sim, bk: B256, side: u8, used_bitmap: u32, mon: usize) -> u32 {
+    let setup_bit = 1u32 << (mon + SETUP_LANE_BIT_OFFSET);
+    let mut b = used_bitmap & !(1u32 << mon);
+    if used_bitmap & setup_bit != 0 {
+        let mhp = mon_max_hp(sim, OBS, bk, side, mon);
+        let hp = mhp + mon_state(sim, OBS, bk, side, mon, MonStateIndexName::Hp);
+        if hp * 2 > mhp {
+            b &= !setup_bit;
+        }
+    }
+    b
+}
+
+const SETUP_LANE_BIT_OFFSET: usize = 8;
+
 /// Candidate actions for one active slot on a normal turn: the TOP-damage (move,target) options
 /// (with per-target diversity — the best option against EACH live enemy slot is always included,
 /// so focus-fire vs spread are both searchable), non-damaging status/setup moves whose targeting
 /// needs no nibble (self-only / none), a pivot switch, and rest. Bench and rest are always kept
 /// (never truncated behind damaging options — the singles rest-bug lesson). Empty lane → rest only.
-fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[u32; 4], team_size: usize) -> Vec<SlotMove> {
+/// `move_used_bitmap` excludes a one-shot setup whose lane bit is set (the engine blocks re-use
+/// until the mon switches out, so it would search as a guaranteed no-op).
+fn slot_candidates(
+    sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[u32; 4], team_size: usize, move_used_bitmap: u32,
+) -> Vec<SlotMove> {
+    slot_candidates_capped(sim, bk, side, abs_slot, slots, team_size, MAX_DAMAGING, MAX_STATUS, move_used_bitmap)
+}
+
+/// `slot_candidates` with explicit caps — the sparse search's interior nodes run leaner.
+#[allow(clippy::too_many_arguments)]
+fn slot_candidates_capped(
+    sim: &mut Sim,
+    bk: B256,
+    side: u8,
+    abs_slot: usize,
+    slots: &[u32; 4],
+    team_size: usize,
+    max_dmg: usize,
+    max_status: usize,
+    move_used_bitmap: u32,
+) -> Vec<SlotMove> {
     let my_mon = slots[abs_slot];
     if my_mon == EMPTY_LANE {
         return vec![NO_OP_MOVE];
     }
+    let setup_locked = move_used_bitmap & (1u32 << (my_mon as usize + SETUP_LANE_BIT_OFFSET)) != 0;
+    let mon_id = sim.mon_id_phys(U256::from(side), my_mon as usize) as usize;
     let mut dmg = damaging_options(sim, bk, side, my_mon);
     dmg.sort_by_key(|&(_, d)| -d); // best damage first
     // Best option per distinct target first (≤2 live slots), then next-best overall.
@@ -355,20 +502,20 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
         }
     }
     for &(sm, _) in &dmg {
-        if out.len() >= MAX_DAMAGING {
+        if out.len() >= max_dmg {
             break;
         }
         if !out.contains(&sm) {
             out.push(sm);
         }
     }
-    out.truncate(MAX_DAMAGING);
+    out.truncate(max_dmg);
 
     // Status/setup moves (non-damaging class, affordable, nibble-free targeting): extraData 0.
     let stamina = mon_current_stamina(sim, OBS, bk, side, my_mon as usize);
     let mut n_status = 0usize;
     for mi in 0..4usize {
-        if n_status >= MAX_STATUS {
+        if n_status >= max_status {
             break;
         }
         let Some(slot_w) = move_slot(sim, OBS, bk, side, my_mon as usize, mi) else { break };
@@ -380,6 +527,9 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
             continue;
         }
         if meta.stamina as i64 > stamina {
+            continue;
+        }
+        if setup_locked && better_cpu_config(mon_id, CONFIG_SETUP_MOVE) as usize == mi + 1 {
             continue;
         }
         let addr = MoveSlotLib::toIMoveSet(slot_w);
@@ -399,19 +549,27 @@ fn slot_candidates(sim: &mut Sim, bk: B256, side: u8, abs_slot: usize, slots: &[
 }
 
 /// Joint (slot0, slot1) actions for a side on a normal turn, capped at MAX_JOINTS.
-fn side_joint(sim: &mut Sim, bk: B256, side: u8) -> Vec<(SlotMove, SlotMove)> {
+/// `move_used_bitmap` gates the side's OWN configured setups (0 for opponent/interior models).
+fn side_joint(sim: &mut Sim, bk: B256, side: u8, move_used_bitmap: u32) -> Vec<(SlotMove, SlotMove)> {
+    side_joint_capped(sim, bk, side, MAX_DAMAGING, MAX_STATUS, move_used_bitmap)
+}
+
+fn side_joint_capped(
+    sim: &mut Sim, bk: B256, side: u8, max_dmg: usize, max_status: usize, move_used_bitmap: u32,
+) -> Vec<(SlotMove, SlotMove)> {
     let [a0, a1] = side_slots(side);
     let slots = active_slots(sim, bk);
     let ts = team_size_of(sim, bk, side);
-    let c0 = slot_candidates(sim, bk, side, a0, &slots, ts);
-    let c1 = slot_candidates(sim, bk, side, a1, &slots, ts);
+    let c0 = slot_candidates_capped(sim, bk, side, a0, &slots, ts, max_dmg, max_status, move_used_bitmap);
+    let c1 = slot_candidates_capped(sim, bk, side, a1, &slots, ts, max_dmg, max_status, move_used_bitmap);
+    let cap = (max_dmg + max_status + 2).pow(2);
     let mut out = Vec::with_capacity(c0.len() * c1.len());
     for &m0 in &c0 {
         for &m1 in &c1 {
             out.push((m0, m1));
         }
     }
-    out.truncate(MAX_JOINTS);
+    out.truncate(cap.min(MAX_JOINTS));
     out
 }
 
@@ -442,12 +600,24 @@ fn forced_joint_model(sim: &mut Sim, bk: B256, side: u8, mask: u32, slots: &[u32
 /// Recursive maximin value at `bk`, cpu_side-perspective. Forced half-turns are resolved
 /// deterministically and recursed WITHOUT consuming depth (they don't burn horizon; the chain is
 /// bounded by roster size / the terminal check).
-fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
+fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW) -> f64 {
+    search_value_capped(sim, bk, cpu_side, depth, w, MAX_DAMAGING, MAX_STATUS)
+}
+
+fn search_value_capped(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    depth: u32,
+    w: &DoublesEvalW,
+    max_dmg: usize,
+    max_status: usize,
+) -> f64 {
     if let Some(v) = terminal(sim, bk, cpu_side, depth) {
         return v;
     }
     if depth == 0 {
-        return doubles_eval(sim, bk, cpu_side);
+        return doubles_eval(sim, bk, cpu_side, w);
     }
     let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag as u32;
     if flag != 2 {
@@ -456,22 +626,22 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
         let mine = forced_joint_model(sim, bk, cpu_side, mask, &slots);
         let theirs = forced_joint_model(sim, bk, 1 - cpu_side, mask, &slots);
         if mine == (NO_OP_MOVE, NO_OP_MOVE) && theirs == (NO_OP_MOVE, NO_OP_MOVE) {
-            return doubles_eval(sim, bk, cpu_side); // no legal resolution — don't loop
+            return doubles_eval(sim, bk, cpu_side, w); // no legal resolution — don't loop
         }
         let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-        let v = search_value(sim, child, cpu_side, depth);
+        let v = search_value_capped(sim, child, cpu_side, depth, w, max_dmg, max_status);
         sim.dispose_fork(child);
         return v;
     }
     let opp_side = 1 - cpu_side;
-    let my = side_joint(sim, bk, cpu_side);
-    let opp = side_joint(sim, bk, opp_side);
+    let my = side_joint_capped(sim, bk, cpu_side, max_dmg, max_status, 0);
+    let opp = side_joint_capped(sim, bk, opp_side, max_dmg, max_status, 0);
     let mut best = f64::NEG_INFINITY;
     for &mine in &my {
         let mut worst = f64::INFINITY;
         for &theirs in &opp {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth - 1);
+            let v = search_value_capped(sim, child, cpu_side, depth - 1, w, max_dmg, max_status);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -490,10 +660,16 @@ fn search_value(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> f64 {
 /// Pick `cpu_side`'s two slot moves by depth-`depth` joint maximin (turn 0 → leads; forced-switch →
 /// first-legal bench; normal turn → search). A reverting hypothetical mid-search is contained to
 /// this decision (fall back to resting both slots) rather than aborting the game.
-pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (SlotMove, SlotMove) {
+pub fn search_side_moves(
+    sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW, bitmap: &mut u32,
+) -> (SlotMove, SlotMove) {
     let saved_fc = sim.fork_counter();
-    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth))) {
-        Ok(m) => m,
+    let bm = *bitmap;
+    match catch_unwind(AssertUnwindSafe(|| search_side_moves_inner(sim, bk, cpu_side, depth, w, bm))) {
+        Ok(m) => {
+            *bitmap = update_used_bitmap(sim, bk, cpu_side, bm, m);
+            m
+        }
         Err(_) => {
             sim.set_fork_counter(saved_fc);
             (NO_OP_MOVE, NO_OP_MOVE)
@@ -501,7 +677,34 @@ pub fn search_side_moves(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (
     }
 }
 
-fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) -> (SlotMove, SlotMove) {
+/// TS `finishPick`/`decideSlots` bitmap bookkeeping: a switch clears the incoming mon's
+/// bits; playing the configured setup sets its lane bit.
+fn update_used_bitmap(sim: &mut Sim, bk: B256, cpu_side: u8, mut bitmap: u32, picked: (SlotMove, SlotMove)) -> u32 {
+    if turn_id(sim, bk) == 0 {
+        bitmap = 0;
+    }
+    let slots = active_slots(sim, bk);
+    let [a0, a1] = side_slots(cpu_side);
+    for (abs, m) in [(a0, picked.0), (a1, picked.1)] {
+        if m.move_index == SWITCH {
+            bitmap = clear_used_bits_on_switch_in(sim, bk, cpu_side, bitmap, m.extra_data as usize);
+        } else if m.move_index < 4 {
+            let mon = slots[abs];
+            if mon == EMPTY_LANE {
+                continue;
+            }
+            let mon_id = sim.mon_id_phys(U256::from(cpu_side), mon as usize) as usize;
+            if better_cpu_config(mon_id, CONFIG_SETUP_MOVE) as usize == m.move_index as usize + 1 {
+                bitmap |= 1u32 << (mon as usize + SETUP_LANE_BIT_OFFSET);
+            }
+        }
+    }
+    bitmap
+}
+
+fn search_side_moves_inner(
+    sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32, w: &DoublesEvalW, move_used_bitmap: u32,
+) -> (SlotMove, SlotMove) {
     let [a0, a1] = side_slots(cpu_side);
     let sw = |i: u16| SlotMove { move_index: SWITCH, extra_data: i };
 
@@ -526,7 +729,7 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
             let mut worst = f64::INFINITY;
             for &theirs in &opp {
                 let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-                let v = search_value(sim, child, cpu_side, depth.saturating_sub(1));
+                let v = search_value(sim, child, cpu_side, depth.saturating_sub(1), w);
                 sim.dispose_fork(child);
                 if v < worst {
                     worst = v;
@@ -577,7 +780,7 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
         let mut best_val = f64::NEG_INFINITY;
         for &mine in &combos {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth);
+            let v = search_value(sim, child, cpu_side, depth, w);
             sim.dispose_fork(child);
             if v > best_val {
                 best_val = v;
@@ -589,15 +792,15 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
     // Normal turn: depth-`depth` joint maximin (with the argmax-invariant row prune).
     let depth = depth.max(1);
     let opp_side = 1 - cpu_side;
-    let my = side_joint(sim, bk, cpu_side);
-    let opp = side_joint(sim, bk, opp_side);
+    let my = side_joint(sim, bk, cpu_side, move_used_bitmap);
+    let opp = side_joint(sim, bk, opp_side, 0);
     let mut best = my.first().copied().unwrap_or((NO_OP_MOVE, NO_OP_MOVE));
     let mut best_val = f64::NEG_INFINITY;
     for &mine in &my {
         let mut worst = f64::INFINITY;
         for &theirs in &opp {
             let child = fork_joint(sim, bk, cpu_side, mine, theirs);
-            let v = search_value(sim, child, cpu_side, depth - 1);
+            let v = search_value(sim, child, cpu_side, depth - 1, w);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -609,6 +812,128 @@ fn search_side_moves_inner(sim: &mut Sim, bk: B256, cpu_side: u8, depth: u32) ->
         if worst > best_val {
             best_val = worst;
             best = mine;
+        }
+    }
+    best
+}
+
+// ── Sparse depth-2 search (guided beam over the joint matrix) ────────────────
+//
+// Full d2 squares the joint matrix and is unaffordable in the TS client. The sparse variant
+// spends d1's budget on a guidance matrix, then deepens only the top `k_my` joints against
+// each one's `k_opp` most threatening d1 replies, with leaner candidate caps inside interior
+// nodes. Ordering worst-reply-first keeps the argmax row prune effective.
+
+/// Beam widths + interior-node candidate caps for [`search_side_moves_sparse`].
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct SparseCfg {
+    pub k_my: usize,
+    pub k_opp: usize,
+    pub int_dmg: usize,
+    pub int_status: usize,
+}
+
+/// Full-width interiors — maximum fidelity to true d2 within the beam.
+pub const SPARSE_DEFAULT: SparseCfg =
+    SparseCfg { k_my: 6, k_opp: 6, int_dmg: MAX_DAMAGING, int_status: MAX_STATUS };
+/// Lean interiors + trimmed reply set — the client-budget shape (the TS twin's config).
+pub const SPARSE_LEAN: SparseCfg = SparseCfg { k_my: 6, k_opp: 4, int_dmg: 2, int_status: 0 };
+
+pub fn search_side_moves_sparse(
+    sim: &mut Sim,
+    bk: B256,
+    cpu_side: u8,
+    w: &DoublesEvalW,
+    cfg: SparseCfg,
+    bitmap: &mut u32,
+) -> (SlotMove, SlotMove) {
+    let saved_fc = sim.fork_counter();
+    let bm = *bitmap;
+    match catch_unwind(AssertUnwindSafe(|| sparse_inner(sim, bk, cpu_side, w, cfg, bm))) {
+        Ok(m) => {
+            *bitmap = update_used_bitmap(sim, bk, cpu_side, bm, m);
+            m
+        }
+        Err(_) => {
+            sim.set_fork_counter(saved_fc);
+            (NO_OP_MOVE, NO_OP_MOVE)
+        }
+    }
+}
+
+fn sparse_inner(
+    sim: &mut Sim, bk: B256, cpu_side: u8, w: &DoublesEvalW, cfg: SparseCfg, move_used_bitmap: u32,
+) -> (SlotMove, SlotMove) {
+    // Leads and forced switches keep the shipped depth-1 paths — d2's edge is in normal turns.
+    let flag = Engine::getBattleContext(&mut sim.world, bk).playerSwitchForTurnFlag as u32;
+    if turn_id(sim, bk) == 0 || flag != 2 {
+        return search_side_moves_inner(sim, bk, cpu_side, 1, w, move_used_bitmap);
+    }
+
+    // Phase 1: the d1 guidance matrix, with two beam prunes that keep selection EXACT: a row
+    // whose running minimum drops to/below the k-th best completed row value can never enter
+    // the beam, and columns scan in the first row's threat order so minima are hit early.
+    let opp_side = 1 - cpu_side;
+    let my = side_joint(sim, bk, cpu_side, move_used_bitmap);
+    let opp = side_joint(sim, bk, opp_side, 0);
+    let mut cells = vec![vec![f64::INFINITY; opp.len()]; my.len()];
+    let mut row_val = vec![f64::INFINITY; my.len()];
+    let mut full = vec![false; my.len()];
+    let mut col_order: Vec<usize> = (0..opp.len()).collect();
+    let mut top_vals: Vec<f64> = Vec::new();
+    for (i, &mine) in my.iter().enumerate() {
+        let bound = if top_vals.len() >= cfg.k_my { top_vals[cfg.k_my - 1] } else { f64::NEG_INFINITY };
+        let mut abandoned = false;
+        for &j in &col_order {
+            let child = fork_joint(sim, bk, cpu_side, mine, opp[j]);
+            let v = search_value(sim, child, cpu_side, 0, w);
+            sim.dispose_fork(child);
+            cells[i][j] = v;
+            if v < row_val[i] {
+                row_val[i] = v;
+            }
+            if row_val[i] <= bound {
+                abandoned = true;
+                break;
+            }
+        }
+        if abandoned {
+            continue;
+        }
+        full[i] = true;
+        top_vals.push(row_val[i]);
+        top_vals.sort_by(|a, b| b.total_cmp(a));
+        top_vals.truncate(cfg.k_my);
+        if i == 0 {
+            col_order.sort_by(|&a, &b| cells[0][a].total_cmp(&cells[0][b]));
+        }
+    }
+
+    // Phase 2: deepen the top rows, each against its own worst d1 replies first.
+    let mut order: Vec<usize> = (0..my.len()).filter(|&i| full[i]).collect();
+    order.sort_by(|&a, &b| row_val[b].total_cmp(&row_val[a]));
+    order.truncate(cfg.k_my.max(1));
+    let mut best = my[order[0]]; // the d1 argmax survives as the floor
+    let mut best_val = f64::NEG_INFINITY;
+    for &i in &order {
+        let mut cols: Vec<usize> = (0..opp.len()).collect();
+        cols.sort_by(|&a, &b| cells[i][a].total_cmp(&cells[i][b]));
+        cols.truncate(cfg.k_opp.max(1));
+        let mut worst = f64::INFINITY;
+        for &j in &cols {
+            let child = fork_joint(sim, bk, cpu_side, my[i], opp[j]);
+            let v = search_value_capped(sim, child, cpu_side, 1, w, cfg.int_dmg, cfg.int_status);
+            sim.dispose_fork(child);
+            if v < worst {
+                worst = v;
+            }
+            if worst <= best_val {
+                break; // argmax-invariant row prune
+            }
+        }
+        if worst > best_val {
+            best_val = worst;
+            best = my[i];
         }
     }
     best
@@ -626,9 +951,16 @@ pub struct DoublesSpec {
     pub p1_ids: Vec<u32>,
     pub p0_difficulty: Difficulty,
     pub p1_difficulty: Difficulty,
+    /// Registered bot per side. Empty falls back to the difficulty/search
+    /// fields above, which is how the existing sweeps configure a side.
+    pub p0_bot: &'static str,
+    pub p1_bot: &'static str,
     /// Per-side search depth: 0 = epsilon-greedy at the difficulty; ≥1 = joint maximin search.
     pub p0_search_depth: u32,
     pub p1_search_depth: u32,
+    /// Per-side eval weights for the search tiers (ignored at depth 0).
+    pub p0_eval: DoublesEvalW,
+    pub p1_eval: DoublesEvalW,
 }
 
 pub struct DoublesOutcome {
@@ -637,10 +969,57 @@ pub struct DoublesOutcome {
     pub turns: u32,
 }
 
+/// The registered bot a side plays, or the one its difficulty/search config names.
+fn doubles_bot(spec: &DoublesSpec, side: usize) -> Box<dyn Bot> {
+    let (name, depth, diff, eval) = if side == 0 {
+        (spec.p0_bot, spec.p0_search_depth, spec.p0_difficulty, spec.p0_eval)
+    } else {
+        (spec.p1_bot, spec.p1_search_depth, spec.p1_difficulty, spec.p1_eval)
+    };
+    let name = if !name.is_empty() {
+        name
+    } else if depth > 0 {
+        bots::DOUBLES_SEARCH
+    } else {
+        match diff {
+            Difficulty::Easy => bots::DOUBLES_EASY,
+            Difficulty::Medium => bots::DOUBLES_MEDIUM,
+            Difficulty::Hard => bots::DOUBLES_HARD,
+        }
+    };
+    let cfg = BotConfig { search_depth: depth, doubles_eval: eval, ..BotConfig::default() };
+    bots::build(name, cfg).unwrap_or_else(|| panic!("unknown doubles bot {name:?}"))
+}
+
+/// One side's two slot moves for this turn.
+fn decide_side(sim: &mut Sim, bot: &mut dyn Bot, side: u8, rng: &mut JsRng) -> [SlotMove; 2] {
+    let mut ctx = DecisionCtx {
+        sim,
+        seat: Seat { cpu: side },
+        mode: BattleMode::Doubles,
+        view: None,
+        peek: None,
+        rng,
+    };
+    match bot.decide(&mut ctx) {
+        Action::Slots([a, b]) => [
+            SlotMove { move_index: a.move_index, extra_data: a.extra_data },
+            SlotMove { move_index: b.move_index, extra_data: b.extra_data },
+        ],
+        Action::Single(a) => {
+            [SlotMove { move_index: a.move_index, extra_data: a.extra_data }, NO_OP_MOVE]
+        }
+    }
+}
+
 /// Play one doubles game: each turn both sides pick their two slot moves (greedy CPU at the spec's
 /// difficulty), the moves are packed per side, and the turn executes via `execute_slot_turn`.
 pub fn play_doubles_game(spec: &DoublesSpec, book: &HashMap<String, Address>) -> DoublesOutcome {
-    let mut rng = JsRng::new(spec.seed);
+    let (mut rng0, mut rng1, mut salt_rng) = (
+        derive(spec.seed, STREAM_P0),
+        derive(spec.seed, STREAM_P1),
+        derive(spec.seed, STREAM_SALT),
+    );
     let mut sim = Sim::new_doubles(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -649,25 +1028,17 @@ pub fn play_doubles_game(spec: &DoublesSpec, book: &HashMap<String, Address>) ->
         spec.p1_ids.clone(),
         book,
     );
+    let mut bots_pair = [doubles_bot(spec, 0), doubles_bot(spec, 1)];
 
     for t in 0..spec.max_turns {
         let w = sim.winner_index();
         if w != 2 {
             return DoublesOutcome { winner_side: Some(w), turns: t };
         }
-        let bk = sim.battle_key;
-        let (p0a, p0b) = if spec.p0_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth)
-        } else {
-            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng)
-        };
-        let (p1a, p1b) = if spec.p1_search_depth > 0 {
-            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth)
-        } else {
-            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng)
-        };
-        let salt0 = random_salt(&mut rng);
-        let salt1 = random_salt(&mut rng);
+        let [p0a, p0b] = decide_side(&mut sim, &mut *bots_pair[0], 0, &mut rng0);
+        let [p1a, p1b] = decide_side(&mut sim, &mut *bots_pair[1], 1, &mut rng1);
+        let salt0 = random_salt(&mut salt_rng);
+        let salt1 = random_salt(&mut salt_rng);
         let side0 = pack_side(p0a.move_index, p0a.extra_data, p0b.move_index, p0b.extra_data, salt0);
         let side1 = pack_side(p1a.move_index, p1a.extra_data, p1b.move_index, p1b.extra_data, salt1);
         sim.execute_slot_turn(side0, side1);
@@ -705,6 +1076,418 @@ pub fn run_doubles_games(
                     break;
                 }
                 let r = run_one_doubles(&specs[idx], book);
+                slots.lock().unwrap()[idx] = Some(r);
+            });
+        }
+    });
+    slots.into_inner().unwrap().into_iter().map(|r| r.expect("slot filled")).collect()
+}
+
+// ── Diagnostic: per-turn trace of one mon's doubles game ────────────────────
+
+/// What a tracked mon did / had on one doubles turn.
+pub struct MonTurnTrace {
+    pub turn: u32,
+    pub active: bool,
+    pub move_index: u8,
+    pub hp_pct: f64,
+    pub stamina: i64,
+    /// Attack stat delta — non-zero once Loop's boost lands (the setup payoff).
+    pub atk_delta: i64,
+}
+
+/// A KO credited to one attacker. Doubles can't reuse singles' "opposing active" proxy — there are
+/// two of them — so credit comes from the target nibble the killer's side actually aimed.
+pub struct DoublesKoEvent {
+    pub turn: u32,
+    pub killer_seat: u8,
+    pub killer_id: u32,
+    pub victim_id: u32,
+}
+
+pub struct DoublesInstr {
+    pub winner_side: Option<u8>,
+    pub turns: u32,
+    pub p0_ids: Vec<u32>,
+    pub p1_ids: Vec<u32>,
+    /// Active-turn count per team slot (parallel to p0_ids / p1_ids).
+    pub active_turns_p0: Vec<u32>,
+    pub active_turns_p1: Vec<u32>,
+    pub kos: Vec<DoublesKoEvent>,
+    /// KOs both opposing slots aimed at — a genuine co-kill, so no single attacker earns the credit.
+    pub kos_shared: u32,
+    /// KOs no opposing move aimed at (status, recoil, ally damage).
+    pub kos_incidental: u32,
+    /// Per-turn rows for the `track`ed mon, if any.
+    pub rows: Vec<MonTurnTrace>,
+    pub tracked_active_turns: u32,
+}
+
+/// Was `mv` a real attack aimed at absolute slot `abs`? Switch / rest carry no target nibble.
+fn aimed_at(mv: SlotMove, abs: usize) -> bool {
+    mv.move_index != SWITCH && mv.move_index != NO_OP && (mv.extra_data >> 12) & (1u16 << abs) != 0
+}
+
+/// Counterfactual: replayed from `snap` with only `mv` on `atk_side`'s slot `atk_i` and everything
+/// else resting, does `victim` still go down? Lets a KO both opposing slots aimed at be credited to
+/// whichever one was actually lethal — usually only one is, the other being redundant overkill.
+///
+/// The real turn's salts are reused so accuracy/crit land as close to the observed turn as a
+/// one-sided replay can; it is still a counterfactual, not a replay of what happened.
+fn would_ko_alone(
+    sim: &mut Sim,
+    snap: B256,
+    atk_side: u8,
+    atk_i: usize,
+    mv: SlotMove,
+    victim_side: u8,
+    victim_mon: usize,
+    salts: (u128, u128),
+) -> bool {
+    let (m0, m1) = if atk_i == 0 { (mv, NO_OP_MOVE) } else { (NO_OP_MOVE, mv) };
+    let mine = pack_side(m0.move_index, m0.extra_data, m1.move_index, m1.extra_data, if atk_side == 0 { salts.0 } else { salts.1 });
+    let theirs = pack_side(NO_OP, 0, NO_OP, 0, if atk_side == 0 { salts.1 } else { salts.0 });
+    let (side0, side1) = if atk_side == 0 { (mine, theirs) } else { (theirs, mine) };
+    let fork = sim.apply_hypothetical_slot(snap, side0, side1);
+    let down = ko_bitmap(sim, fork, victim_side) & (1u32 << victim_mon) != 0;
+    sim.dispose_fork(fork);
+    down
+}
+
+/// Replay `spec` recording per-mon active turns and attributed KOs, plus optional per-turn rows for
+/// one tracked `(side, mon)`. Mirrors `play_doubles_game`; the hot path stays uninstrumented.
+pub fn play_doubles_game_instrumented(
+    spec: &DoublesSpec,
+    book: &HashMap<String, Address>,
+    track: Option<(u8, usize)>,
+) -> DoublesInstr {
+    let (mut rng0, mut rng1, mut salt_rng) = (
+        derive(spec.seed, STREAM_P0),
+        derive(spec.seed, STREAM_P1),
+        derive(spec.seed, STREAM_SALT),
+    );
+    let mut sim = Sim::new_doubles(
+        spec.mons_per_team,
+        spec.p0_team.clone(),
+        spec.p1_team.clone(),
+        spec.p0_ids.clone(),
+        spec.p1_ids.clone(),
+        book,
+    );
+    let mut out = DoublesInstr {
+        winner_side: None,
+        turns: spec.max_turns,
+        p0_ids: spec.p0_ids.clone(),
+        p1_ids: spec.p1_ids.clone(),
+        active_turns_p0: vec![0; spec.p0_ids.len()],
+        active_turns_p1: vec![0; spec.p1_ids.len()],
+        kos: Vec::new(),
+        kos_shared: 0,
+        kos_incidental: 0,
+        rows: Vec::new(),
+        tracked_active_turns: 0,
+    };
+
+    let (mut bm0, mut bm1) = (0u32, 0u32);
+    for t in 0..spec.max_turns {
+        let w = sim.winner_index();
+        if w != 2 {
+            out.winner_side = Some(w);
+            out.turns = t;
+            return out;
+        }
+        let bk = sim.battle_key;
+        let (p0a, p0b) = if spec.p0_search_depth > 0 {
+            search_side_moves(&mut sim, bk, 0, spec.p0_search_depth, &spec.p0_eval, &mut bm0)
+        } else {
+            pick_side_moves(&mut sim, bk, 0, spec.p0_difficulty, &mut rng0)
+        };
+        let (p1a, p1b) = if spec.p1_search_depth > 0 {
+            search_side_moves(&mut sim, bk, 1, spec.p1_search_depth, &spec.p1_eval, &mut bm1)
+        } else {
+            pick_side_moves(&mut sim, bk, 1, spec.p1_difficulty, &mut rng1)
+        };
+
+        // Slot occupancy + KO state before the turn — the victim's slot must be read pre-execute,
+        // since a KO'd slot may already have been vacated by the time we look.
+        let slots = active_slots(&mut sim, bk);
+        for side in 0u8..2 {
+            for abs in side_slots(side) {
+                let mon = slots[abs];
+                if mon == EMPTY_LANE {
+                    continue;
+                }
+                let counts = if side == 0 { &mut out.active_turns_p0 } else { &mut out.active_turns_p1 };
+                if let Some(c) = counts.get_mut(mon as usize) {
+                    *c += 1;
+                }
+            }
+        }
+        let ko_before = [ko_bitmap(&mut sim, bk, 0), ko_bitmap(&mut sim, bk, 1)];
+
+        if let Some((side, mon)) = track {
+            let [s0, s1] = side_slots(side);
+            let picked = if side == 0 { (p0a, p0b) } else { (p1a, p1b) };
+            let (active, move_index) = if slots[s0] == mon as u32 {
+                (true, picked.0.move_index)
+            } else if slots[s1] == mon as u32 {
+                (true, picked.1.move_index)
+            } else {
+                (false, NO_OP)
+            };
+            if active {
+                out.tracked_active_turns += 1;
+            }
+            let mhp = mon_max_hp(&mut sim, OBS, bk, side, mon).max(1);
+            let hp = mhp + mon_state(&mut sim, OBS, bk, side, mon, MonStateIndexName::Hp);
+            out.rows.push(MonTurnTrace {
+                turn: t,
+                active,
+                move_index,
+                hp_pct: (hp.max(0) * 100) as f64 / mhp as f64,
+                stamina: mon_current_stamina(&mut sim, OBS, bk, side, mon),
+                atk_delta: mon_state(&mut sim, OBS, bk, side, mon, MonStateIndexName::Attack),
+            });
+        }
+
+        let salt0 = random_salt(&mut salt_rng);
+        let salt1 = random_salt(&mut salt_rng);
+        let side0 = pack_side(p0a.move_index, p0a.extra_data, p0b.move_index, p0b.extra_data, salt0);
+        let side1 = pack_side(p1a.move_index, p1a.extra_data, p1b.move_index, p1b.extra_data, salt1);
+        // Rollback point for the co-kill counterfactuals below — the real turn is about to advance
+        // the battle past the state they need to be posed from.
+        let snap = sim.snapshot(bk);
+        sim.execute_slot_turn(side0, side1);
+
+        // Fresh KOs → credit whichever opposing slot aimed at the victim's slot. Exactly one aimer
+        // is a clean attribution; two gets resolved by replaying each alone; none means it wasn't a
+        // targeted move that did it.
+        let bk2 = sim.battle_key;
+        for side in 0u8..2 {
+            let fresh = ko_bitmap(&mut sim, bk2, side) & !ko_before[side as usize];
+            if fresh == 0 {
+                continue;
+            }
+            let opp = 1 - side;
+            let opp_moves = if opp == 0 { [p0a, p0b] } else { [p1a, p1b] };
+            let (victim_ids, killer_ids) = if side == 0 {
+                (&spec.p0_ids, &spec.p1_ids)
+            } else {
+                (&spec.p1_ids, &spec.p0_ids)
+            };
+            for v in 0..victim_ids.len() {
+                if fresh & (1u32 << v) == 0 {
+                    continue;
+                }
+                let Some(v_abs) = side_slots(side).into_iter().find(|&a| slots[a] == v as u32) else {
+                    out.kos_incidental += 1; // victim wasn't an active slot this turn
+                    continue;
+                };
+                let aimers: Vec<usize> = (0..2).filter(|&i| aimed_at(opp_moves[i], v_abs)).collect();
+                if aimers.is_empty() {
+                    out.kos_incidental += 1; // nothing targeted it — status, recoil, or ally damage
+                    continue;
+                }
+                // Both aimed → replay each alone; the one lethal by itself earns the credit. If
+                // neither or both are, the KO is genuinely shared and stays out of the matrix.
+                let lethal: Vec<usize> = if aimers.len() == 2 {
+                    aimers
+                        .iter()
+                        .copied()
+                        .filter(|&i| {
+                            would_ko_alone(&mut sim, snap, opp, i, opp_moves[i], side, v, (salt0, salt1))
+                        })
+                        .collect()
+                } else {
+                    aimers
+                };
+                let [i] = lethal.as_slice() else {
+                    out.kos_shared += 1;
+                    continue;
+                };
+                let k_abs = side_slots(opp)[*i];
+                match killer_ids.get(slots[k_abs] as usize) {
+                    Some(&killer_id) => out.kos.push(DoublesKoEvent {
+                        turn: t,
+                        killer_seat: opp,
+                        killer_id,
+                        victim_id: victim_ids[v],
+                    }),
+                    None => out.kos_incidental += 1,
+                }
+            }
+        }
+        sim.dispose_fork(snap);
+    }
+    let fw = sim.winner_index();
+    out.winner_side = if fw != 2 { Some(fw) } else { None };
+    out
+}
+
+#[cfg(test)]
+mod pilot_tests {
+    use super::*;
+    use crate::arena::build_doubles_specs;
+    use crate::roster::{self, load_roster};
+
+    fn chomp_root() -> std::path::PathBuf {
+        std::env::var("CHOMP_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
+        })
+    }
+
+    /// Every mon must be able to take a real action in doubles. A move whose hand-written
+    /// `getMeta()` quotes `basePower: 0` used to be dropped from the option set, which left a mon
+    /// with an all-custom kit (Iblivion) with nothing to pick and resting every turn of every game.
+    #[test]
+    fn every_mon_can_act_in_doubles() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let (specs, _) = build_doubles_specs(&roster, 240, 0xbeefcafe, 10_000, true, 0);
+
+        for m in &roster.mons {
+            let mut appearances = 0;
+            let mut acted = false;
+            for spec in &specs {
+                for side in 0u8..2 {
+                    let ids = if side == 0 { &spec.p0_ids } else { &spec.p1_ids };
+                    let Some(mon) = ids.iter().position(|&x| x == m.id) else { continue };
+                    appearances += 1;
+                    let tr = play_doubles_game_instrumented(spec, &book, Some((side, mon)));
+                    if tr.rows.iter().any(|r| r.active && r.move_index != NO_OP && r.move_index != SWITCH) {
+                        acted = true;
+                        break;
+                    }
+                }
+                if acted {
+                    break;
+                }
+            }
+            assert!(appearances > 0, "{} never drafted — widen the sample", m.name);
+            assert!(acted, "{} never used a move in {appearances} doubles appearances", m.name);
+        }
+    }
+
+    /// KO attribution must stay conservative and well-covered: every KO lands in exactly one of
+    /// credited / co-kill / incidental (no double-counting), and the co-kill replay must recover the
+    /// bulk of the turns where both slots aimed at the same victim — without it, coverage sits near
+    /// half and focus-fired mons are systematically under-counted as victims.
+    #[test]
+    fn ko_attribution_is_covered_and_conserved() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let (specs, _) = build_doubles_specs(&roster, 300, 0xbeefcafe, 10_000, true, 0);
+        let recs = run_doubles_games_instrumented(&specs, &book, 1);
+
+        let credited: usize = recs.iter().map(|r| r.kos.len()).sum();
+        let shared: u32 = recs.iter().map(|r| r.kos_shared).sum();
+        let incidental: u32 = recs.iter().map(|r| r.kos_incidental).sum();
+        let total = credited as u32 + shared + incidental;
+        assert!(total > 0, "no KOs observed — widen the sample");
+
+        // A credited KO names a killer on the crediting side and a victim on the other. (killer_id
+        // == victim_id is legal: the two teams are drawn independently, so mirrors happen.)
+        for r in &recs {
+            for ko in &r.kos {
+                let (killers, victims) = if ko.killer_seat == 0 {
+                    (&r.p0_ids, &r.p1_ids)
+                } else {
+                    (&r.p1_ids, &r.p0_ids)
+                };
+                assert!(killers.contains(&ko.killer_id), "killer not on the crediting side");
+                assert!(victims.contains(&ko.victim_id), "victim not on the opposing side");
+            }
+        }
+
+        let coverage = credited as f64 / total as f64;
+        assert!(coverage > 0.6, "KO attribution coverage fell to {:.0}% — co-kill replay regressed", coverage * 100.0);
+    }
+
+    /// The probe must actually price a zero-quote move. Iblivion's kit is entirely hand-written
+    /// `IMoveSet`, so every one of its damage options comes from simulation — if the probe silently
+    /// returned 0 the pilot would be picking blind even though it has candidates.
+    #[test]
+    fn probe_prices_a_zero_quote_kit() {
+        let roster = load_roster(&chomp_root());
+        let book = roster::address_book();
+        let iblivion = roster.mons.iter().find(|m| m.name == "Iblivion").expect("Iblivion in roster");
+        let (specs, _) = build_doubles_specs(&roster, 240, 0xbeefcafe, 10_000, true, 0);
+
+        let mut priced = false;
+        'outer: for spec in &specs {
+            for side in 0u8..2 {
+                let ids = if side == 0 { &spec.p0_ids } else { &spec.p1_ids };
+                if !ids.contains(&iblivion.id) {
+                    continue;
+                }
+                let mut sim = Sim::new_doubles(
+                    spec.mons_per_team,
+                    spec.p0_team.clone(),
+                    spec.p1_team.clone(),
+                    spec.p0_ids.clone(),
+                    spec.p1_ids.clone(),
+                    &book,
+                );
+                let bk = sim.battle_key;
+                // Turn 0 is the send-in; step once so both sides have live actives to price against.
+                sim.execute_slot_turn(
+                    pack_side(SWITCH, 0, SWITCH, 1, 0),
+                    pack_side(SWITCH, 0, SWITCH, 1, 0),
+                );
+                let mon = ids.iter().position(|&x| x == iblivion.id).unwrap() as u32;
+                let opts = damaging_options(&mut sim, bk, side, mon);
+                if opts.iter().any(|&(_, d)| d > 0) {
+                    priced = true;
+                    break 'outer;
+                }
+            }
+        }
+        assert!(priced, "probe never produced a non-zero damage estimate for Iblivion's all-custom kit");
+    }
+}
+
+/// One instrumented doubles game, with the same engine-panic guard as the plain runner (a panic
+/// yields an empty record, counted as a draw, rather than taking down the batch).
+fn run_one_doubles_instrumented(spec: &DoublesSpec, book: &HashMap<String, Address>) -> DoublesInstr {
+    catch_unwind(AssertUnwindSafe(|| play_doubles_game_instrumented(spec, book, None))).unwrap_or_else(|_| {
+        DoublesInstr {
+            winner_side: None,
+            turns: 0,
+            p0_ids: spec.p0_ids.clone(),
+            p1_ids: spec.p1_ids.clone(),
+            active_turns_p0: vec![0; spec.p0_ids.len()],
+            active_turns_p1: vec![0; spec.p1_ids.len()],
+            kos: Vec::new(),
+            kos_shared: 0,
+            kos_incidental: 0,
+            rows: Vec::new(),
+            tracked_active_turns: 0,
+        }
+    })
+}
+
+/// Instrumented counterpart of [`run_doubles_games`]; results come back in spec order.
+pub fn run_doubles_games_instrumented(
+    specs: &[DoublesSpec],
+    book: &HashMap<String, Address>,
+    threads: usize,
+) -> Vec<DoublesInstr> {
+    if threads <= 1 || specs.len() <= 1 {
+        return specs.iter().map(|s| run_one_doubles_instrumented(s, book)).collect();
+    }
+    let n = threads.min(specs.len());
+    let mut slots: Vec<Option<DoublesInstr>> = Vec::with_capacity(specs.len());
+    slots.resize_with(specs.len(), || None);
+    let slots = std::sync::Mutex::new(slots);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..n {
+            scope.spawn(|| loop {
+                let idx = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if idx >= specs.len() {
+                    break;
+                }
+                let r = run_one_doubles_instrumented(&specs[idx], book);
                 slots.lock().unwrap()[idx] = Some(r);
             });
         }

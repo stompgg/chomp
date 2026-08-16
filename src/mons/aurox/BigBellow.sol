@@ -14,10 +14,6 @@ contract BigBellow is IMoveSet {
     uint8 public constant SP_ATTACK_DEBUFF_PERCENT = 50;
     uint8 public constant SPEED_DEBUFF_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Big Bellow";
-    }
-
     function move(
         IEngine engine,
         bytes32,

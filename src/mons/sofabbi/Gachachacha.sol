@@ -33,10 +33,6 @@ contract Gachachacha is IMoveSet {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Gachachacha";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

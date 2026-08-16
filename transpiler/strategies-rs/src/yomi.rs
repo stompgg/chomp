@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 
 use crate::arena::build_specs_with;
-use crate::game::{run_games_yomi, StrategyKind};
+use crate::bots;
+use crate::game::{run_games_yomi, BotName};
 use crate::roster::{self, Roster};
 
 #[derive(Default, Clone)]
@@ -41,7 +42,7 @@ pub fn run_yomi_analysis(
     let book = roster::address_book();
     // Drive with greedy (fast); the grid itself is no-peek by construction, so the driver only
     // decides which positions get sampled, not the tension computed at them.
-    let pairs = [(StrategyKind::Greedy, StrategyKind::Greedy)];
+    let pairs = [(bots::GREEDY, bots::GREEDY)];
     let (specs, _) = build_specs_with(roster, games, wseed, seed_base, &pairs);
     let results = run_games_yomi(&specs, &book, threads);
 

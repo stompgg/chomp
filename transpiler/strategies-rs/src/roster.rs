@@ -1,6 +1,6 @@
 //! Standalone roster loader for the pure-Rust arena — replaces the TS team-builder the FFI arena
 //! fed in. Reads `drool/*.csv` + the per-move inline JSONs and resolves each mon's move catalog to
-//! the packed engine words, a faithful port of `sims/src/arena/team.ts` + `mon-builder.ts` +
+//! the packed engine words, mirroring `sims/src/util/mon-builder.ts` +
 //! `processing/packMoves.py`. Addresses are a deterministic name→address map (the arena only needs
 //! deploy_all and the move/ability words to agree; the specific values are irrelevant).
 
@@ -28,12 +28,14 @@ pub fn address_book() -> std::collections::HashMap<String, Address> {
     CONTRACT_NAMES.iter().map(|&n| (n.to_string(), addr_of(n))).collect()
 }
 
-/// "Bull Rush" / "Hit-And-Dip" → "BullRush" / "HitAndDip": split on space/hyphen, capitalize each
-/// word's first char (rest untouched), join. Mirrors mon-builder.ts:moveNameToContract.
+/// "Bull Rush" / "Hit-And-Dip" / "King's Respite" → "BullRush" / "HitAndDip" / "KingsRespite":
+/// split on space/hyphen, capitalize each word's first char, drop remaining punctuation, join.
+/// Mirrors mon-builder.ts:moveNameToContract and the deploy generator's `\W+` strip.
 fn move_name_to_contract(name: &str) -> String {
     let mut out = String::new();
     for word in name.split(|c: char| c.is_whitespace() || c == '-').filter(|w| !w.is_empty()) {
-        let mut chars = word.chars();
+        let cleaned: String = word.chars().filter(|c| c.is_alphanumeric()).collect();
+        let mut chars = cleaned.chars();
         if let Some(first) = chars.next() {
             out.extend(first.to_uppercase());
             out.push_str(chars.as_str());
@@ -69,20 +71,26 @@ fn class_from_name(name: &str) -> u64 {
     match name { "Physical" => 0, "Special" => 1, "Self" => 2, "Other" => 3, o => panic!("class {o:?}") }
 }
 
+/// An inline move's .json holds only its effect; every packed value comes from moves.csv.
 #[derive(Deserialize)]
 struct InlineMoveJson {
-    #[serde(rename = "basePower")] base_power: u64,
-    #[serde(rename = "staminaCost")] stamina_cost: u64,
-    #[serde(rename = "moveType")] move_type: String,
-    #[serde(rename = "moveClass")] move_class: String,
-    #[serde(rename = "effectAccuracy")] effect_accuracy: u64,
     effect: Option<String>,
-    #[serde(default)] priority: u64,
+}
+
+/// Inline-move packing params, read off the move's moves.csv row.
+#[derive(Clone)]
+struct InlineParams {
+    base_power: u64,
+    stamina_cost: u64,
+    move_type: String,
+    move_class: String,
+    priority: u64,
+    effect_accuracy: u64,
 }
 
 /// packMoves.py layout: [basePower:8|moveClass:2|priority:2|moveType:4|stamina:4|effectAccuracy:8|_:68|effect:160].
-fn pack_inline_move(m: &InlineMoveJson) -> U256 {
-    let effect_addr = match &m.effect {
+fn pack_inline_move(p: &InlineParams, effect: Option<&str>) -> U256 {
+    let effect_addr = match effect {
         Some(e) if !e.is_empty() => U256::from_be_bytes::<32>({
             let mut b = [0u8; 32];
             b[12..].copy_from_slice(addr_of(&move_name_to_contract(e)).as_slice());
@@ -90,13 +98,21 @@ fn pack_inline_move(m: &InlineMoveJson) -> U256 {
         }),
         _ => U256::ZERO,
     };
-    (U256::from(m.base_power) << 248)
-        | (U256::from(class_from_name(&m.move_class)) << 246)
-        | (U256::from(m.priority) << 244)
-        | (U256::from(type_from_name(&m.move_type) as u64) << 240)
-        | (U256::from(m.stamina_cost) << 236)
-        | (U256::from(m.effect_accuracy) << 228)
+    (U256::from(p.base_power) << 248)
+        | (U256::from(class_from_name(&p.move_class)) << 246)
+        | (U256::from(p.priority) << 244)
+        | (U256::from(type_from_name(&p.move_type) as u64) << 240)
+        | (U256::from(p.stamina_cost) << 236)
+        | (U256::from(p.effect_accuracy) << 228)
         | effect_addr
+}
+
+/// Value of a `NAME=VAL;…` entry in the moves.csv Constants column.
+fn csv_constant(raw: &str, name: &str) -> Option<u64> {
+    raw.split(';')
+        .filter_map(|p| p.trim().split_once('='))
+        .find(|(k, _)| k.trim() == name)
+        .and_then(|(_, v)| v.trim().parse().ok())
 }
 
 pub fn addr_to_word(a: Address) -> U256 {
@@ -241,12 +257,16 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
     let drool = chomp_root.join("drool");
     let src_mons = chomp_root.join("src").join("mons");
 
-    // moves.csv → per-mon ordered (name, unlock) list, plus the deployed-move → InputType map.
+    // moves.csv → per-mon ordered (name, unlock, inline params) list, plus the deployed-move →
+    // InputType map. The inline params are unused for deployed moves (their row may carry '?').
     let (mh, mrows) = read_csv(&drool.join("moves.csv"));
     let (m_name, m_mon, m_unlock) = (col(&mh, "Name"), col(&mh, "Mon"), col(&mh, "UnlockLevel"));
     let m_input = col(&mh, "InputType");
     let m_tspec = col(&mh, "TargetSpec");
-    let mut moves_by_mon: Vec<(String, Vec<(String, u8)>)> = Vec::new();
+    let (m_power, m_stamina) = (col(&mh, "Power"), col(&mh, "Stamina"));
+    let (m_type, m_class, m_prio) = (col(&mh, "Type"), col(&mh, "Class"), col(&mh, "Priority"));
+    let m_consts = col(&mh, "Constants");
+    let mut moves_by_mon: Vec<(String, Vec<(String, u8, InlineParams)>)> = Vec::new();
     let mut input_by_addr: std::collections::HashMap<Address, InputType> = std::collections::HashMap::new();
     let mut tspec_by_addr: std::collections::HashMap<Address, TargetSpec> = std::collections::HashMap::new();
     for r in &mrows {
@@ -255,7 +275,18 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
             Some(e) => e,
             None => { moves_by_mon.push((mon.clone(), Vec::new())); moves_by_mon.last_mut().unwrap() }
         };
-        entry.1.push((r[m_name].clone(), r[m_unlock].parse().unwrap_or(0)));
+        entry.1.push((
+            r[m_name].clone(),
+            r[m_unlock].parse().unwrap_or(0),
+            InlineParams {
+                base_power: r[m_power].parse().unwrap_or(0),
+                stamina_cost: r[m_stamina].parse().unwrap_or(0),
+                move_type: r[m_type].clone(),
+                move_class: r[m_class].clone(),
+                priority: r[m_prio].parse().unwrap_or(0),
+                effect_accuracy: csv_constant(&r[m_consts], "EFFECT_ACCURACY").unwrap_or(0),
+            },
+        ));
 
         let contract = move_name_to_contract(&r[m_name]);
         if is_deployed(&contract) {
@@ -280,20 +311,30 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
     let (c_t1, c_t2) = (col(&h, "Type1"), col(&h, "Type2"));
 
     let mut mons = Vec::new();
+    // A dropped move silently shortens a mon's catalog (build_team_mon then pads by repeating the
+    // last lane), which quietly changes the mon being measured — report them rather than hide them.
+    let mut dropped: Vec<String> = Vec::new();
     for r in &rows {
         let name = r[c_name].clone();
         let mon_dir = name.to_lowercase();
 
         let mut catalog = Vec::new();
-        for (mv_name, unlock) in moves_for(&name) {
+        for (mv_name, unlock, params) in moves_for(&name) {
             let contract = move_name_to_contract(&mv_name);
             let word = if is_deployed(&contract) {
                 addr_to_word(addr_of(&contract))
             } else {
                 let json_path = src_mons.join(&mon_dir).join(format!("{contract}.json"));
                 match fs::read_to_string(&json_path) {
-                    Ok(text) => pack_inline_move(&serde_json::from_str(&text).unwrap()),
-                    Err(_) => continue, // unimplemented move — skip (mirrors monCatalog)
+                    Ok(text) => {
+                        let j: InlineMoveJson = serde_json::from_str(&text).unwrap();
+                        pack_inline_move(&params, j.effect.as_deref())
+                    }
+                    Err(_) => {
+                        // unimplemented move — skip (mirrors monCatalog)
+                        dropped.push(format!("{name}/{mv_name}"));
+                        continue;
+                    }
                 }
             };
             catalog.push(CatalogMove { word, name: mv_name, unlock_level: unlock });
@@ -302,11 +343,20 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
             panic!("mon {name} has no resolvable moves");
         }
 
-        let ability = ability_for(&name)
-            .map(|a| move_name_to_contract(&a))
-            .filter(|c| is_deployed(c))
-            .map(|c| addr_to_word(addr_of(&c)))
-            .unwrap_or(U256::ZERO);
+        let ability = match ability_for(&name) {
+            Some(a) => {
+                let contract = move_name_to_contract(&a);
+                if is_deployed(&contract) {
+                    addr_to_word(addr_of(&contract))
+                } else {
+                    // Silently losing an ability changes the mon being measured just as a dropped
+                    // move does.
+                    dropped.push(format!("{name}/{a} (ability)"));
+                    U256::ZERO
+                }
+            }
+            None => U256::ZERO,
+        };
 
         mons.push(RosterMon {
             id: r[c_id].parse().unwrap(),
@@ -325,6 +375,13 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
             ability,
             catalog,
         });
+    }
+    if !dropped.is_empty() {
+        eprintln!(
+            "roster: {} move(s) had no contract or inline json and were dropped: {}",
+            dropped.len(),
+            dropped.join(", ")
+        );
     }
     mons.sort_by_key(|m| m.id);
     Roster { mons }

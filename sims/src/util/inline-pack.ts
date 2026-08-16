@@ -1,17 +1,20 @@
 /**
- * Port of chomp/processing/packMoves.py — pack a JSON move definition into the
- * uint256 slot value the Engine consumes when `(rawMoveSlot >> 160) != 0`.
+ * Port of chomp/processing/packMoves.py — pack an inline move into the uint256
+ * slot value the Engine consumes when `(rawMoveSlot >> 160) != 0`.
  *
  * Layout (256 bits): [basePower:8 | moveClass:2 | priority:2 | moveType:4 |
  *   stamina:4 | effectAccuracy:8 | unused:68 | effect:160]
  *
- * Inline moves always run with DEFAULT_ACCURACY=100, DEFAULT_VOL=10 in the
- * engine — fields not in this format aren't customizable per-move.
+ * Every packed value comes from the move's moves.csv row; the per-move .json
+ * only marks the move inline and names its effect. Inline moves always run with
+ * DEFAULT_ACCURACY=100, DEFAULT_VOL=10 in the engine — fields not in this
+ * format aren't customizable per-move.
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from '../../../transpiler/ts-output/Enums';
+import type { MoveRow } from './csv-load';
 
 const SRC_MONS_DIR = join(import.meta.dir, '..', '..', '..', 'src', 'mons');
 
@@ -27,18 +30,33 @@ const CLASS_MAP: Record<string, number> = {
   Physical: 0, Special: 1, Self: 2, Other: 3,
 };
 
+/** Contents of a `src/mons/<mon>/<Move>.json` marker file. */
 export interface InlineMoveJson {
-  name: string;
+  effect: string | null;
+}
+
+export interface InlineMoveParams {
   basePower: number;
   staminaCost: number;
   moveType: keyof typeof TYPE_MAP;
   moveClass: keyof typeof CLASS_MAP;
   effectAccuracy: number;
-  effect: string | null;
   priority?: number;
 }
 
-export function packMove(m: InlineMoveJson, effectAddress: bigint = 0n): bigint {
+/** moves.csv is the source of truth for every packed field. */
+export function inlineParamsFromCsv(move: MoveRow): InlineMoveParams {
+  return {
+    basePower: move.power ?? 0,
+    staminaCost: move.stamina ?? 0,
+    moveType: move.type,
+    moveClass: move.cls,
+    effectAccuracy: move.constants.EFFECT_ACCURACY ?? 0,
+    priority: move.priority,
+  };
+}
+
+export function packMove(m: InlineMoveParams, effectAddress: bigint = 0n): bigint {
   const movClass = CLASS_MAP[m.moveClass];
   const movType = TYPE_MAP[m.moveType];
   const priority = m.priority ?? 0;

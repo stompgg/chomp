@@ -1,8 +1,7 @@
-//! HEURISTIC CPU — port of `sims/src/cpu/strategies/hard-cpu.ts`: best-response
-//! with foreknowledge (peeks the revealed move), sim-measured damage on
-//! both sides, guarded free-turn setup punishment, defensive switching,
-//! anti-wall pivot, and the eval-veto wrapper. Every phase, threshold and
-//! rng draw mirrors the TS source order.
+//! HEURISTIC CPU — best-response with foreknowledge (peeks the revealed
+//! move), sim-measured damage on both sides, guarded free-turn setup
+//! punishment, defensive switching, anti-wall pivot, and the eval-veto
+//! wrapper.
 
 use chomp_engine::Constants;
 use chomp_engine::Enums::MoveClass;
@@ -36,7 +35,7 @@ const SWITCH_PRIORITY: i64 = Constants::SWITCH_PRIORITY.as_limbs()[0] as i64;
 /// Per-mon setup-move config (`BETTER_CPU_MON_CONFIG`): values stored as
 /// moveIndex+1, 0 = unset. Only CONFIG_SETUP_MOVE is populated — the
 /// switch-in / preferred lanes stay inert, like the TS table.
-fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
+pub(crate) fn better_cpu_config(mon_index: usize, config_key: usize) -> u16 {
     if config_key != CONFIG_SETUP_MOVE {
         return 0;
     }
@@ -185,7 +184,7 @@ fn find_best_switch_candidate(
             sim, seat, bk, VOPP, opponent_mon_index, VCPU, candidate_mon_index,
         );
         let static_dmg = if can_estimate {
-            estimate_damage(sim, bk, &mut ctx, opp_move_slot.unwrap(), opp_move_class.unwrap())
+            estimate_damage(sim, bk, &mut ctx, VOPP, opponent_mon_index, opp_move_slot.unwrap())
         } else {
             0
         };
@@ -280,7 +279,7 @@ fn is_free_turn_reveal(
     if opp_class != MoveClass::Other && opp_class != MoveClass::Self_ {
         return false;
     }
-    get_move_base_power(sim, bk, slot) == 0
+    get_move_base_power(sim, bk, VOPP, opponent_mon_index, slot) == 0
 }
 
 /// `freeTurnPick`: configured switch-in -> 2HKO -> momentum-guarded setup.
@@ -491,7 +490,7 @@ fn decide_inner(
             opp_move_class = Some(mc);
             if mc == MoveClass::Physical || mc == MoveClass::Special {
                 let mut ctx_to_us = damage_calc_context(sim, seat, bk, VOPP, VCPU);
-                damage_to_us = estimate_damage(sim, bk, &mut ctx_to_us, slot, mc);
+                damage_to_us = estimate_damage(sim, bk, &mut ctx_to_us, VOPP, opponent_mon_index, slot);
             }
         }
         // True reveal damage from the sim; the static estimate stays as the

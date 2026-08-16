@@ -1,8 +1,7 @@
 //! Seat translation + engine-view readers + candidate enumeration.
 //!
-//! Port of `sims/src/cpu/engine-view.ts` and `sims/src/cpu/battle-view.ts`,
-//! with the seat transposition of `sims/src/arena/transpose.ts` folded into
-//! a [`Seat`] value instead of a JS Proxy.
+//! The seat transposition is folded into a [`Seat`] value rather than a
+//! proxy object wrapping the engine.
 //!
 //! Convention (inherited from the on-chain CPUs): strategy code sees the
 //! CPU as p1 and the opponent as p0 — VIRTUAL indices. `Seat` maps virtual
@@ -75,11 +74,11 @@ pub fn switch_flag(sim: &mut Sim, seat: Seat, bk: B256) -> u8 {
     }
 }
 
-/// Virtual [opp active, cpu active] (the proxied getActiveMonIndex swap).
+/// Virtual [opp active, cpu active] — active indices off getBattleContext, seat-swapped.
 pub fn active_mon_indices(sim: &mut Sim, seat: Seat, bk: B256) -> (usize, usize) {
-    let r = Engine::getActiveMonIndexForBattleState(&mut sim.world, bk);
-    let p0 = u64::try_from(r[0]).unwrap() as usize;
-    let p1 = u64::try_from(r[1]).unwrap() as usize;
+    let ctx = Engine::getBattleContext(&mut sim.world, bk);
+    let p0 = ctx.p0ActiveMonIndex as usize;
+    let p1 = ctx.p1ActiveMonIndex as usize;
     if seat.flipped() {
         (p1, p0)
     } else {
@@ -158,9 +157,19 @@ pub fn move_slot(sim: &mut Sim, seat: Seat, bk: B256, vp: u8, mon: usize, mi: us
 }
 
 /// Damage context between the two ACTIVE mons (proxied: both player-index
-/// args seat-mapped).
+/// args seat-mapped; the engine now takes explicit mon indices, so each
+/// side's active is resolved here).
 pub fn damage_calc_context(sim: &mut Sim, seat: Seat, bk: B256, atk_vp: u8, def_vp: u8) -> DamageCalcContext {
-    Engine::getDamageCalcContext(&mut sim.world, bk, seat.phys(atk_vp), seat.phys(def_vp))
+    let (opp_active, cpu_active) = active_mon_indices(sim, seat, bk);
+    let active_of = |vp: u8| if vp == VCPU { cpu_active } else { opp_active };
+    Engine::getDamageCalcContext(
+        &mut sim.world,
+        bk,
+        seat.phys(atk_vp),
+        U256::from(active_of(atk_vp) as u64),
+        seat.phys(def_vp),
+        U256::from(active_of(def_vp) as u64),
+    )
 }
 
 /// `TYPE_CALC.getTypeEffectiveness` — TypeCalculator delegates straight to
@@ -199,13 +208,6 @@ pub fn slot_move_type(sim: &mut Sim, bk: B256, slot: U256) -> Type {
 
 pub fn slot_priority(sim: &mut Sim, bk: B256, vp: u8, slot: U256) -> u32 {
     MoveSlotLib::priority(&mut sim.world, slot, sim.engine_addr, bk, U256::from(vp as u64))
-}
-
-/// External move's `basePower(battleKey)` — duck-typed probe, 0 for moves
-/// that don't expose it (the TS try/`typeof`-guard path).
-pub fn slot_external_base_power(sim: &mut Sim, bk: B256, slot: U256) -> u32 {
-    let target = MoveSlotLib::toIMoveSet(slot);
-    chomp_engine::dispatch::try_basePower(&mut sim.world, target, bk).unwrap_or(0)
 }
 
 /// External move's `accuracy(battleKey)` — duck-typed probe, None when absent.

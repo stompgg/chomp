@@ -65,6 +65,9 @@ class CodeGenerationContext:
     # Import tracking
     base_contracts_needed: Set[str] = field(default_factory=set)
     libraries_referenced: Set[str] = field(default_factory=set)
+    # Libraries referenced for a `static readonly` constant, which resolves against the
+    # class rather than the singleton — so the import needs the class name too.
+    library_classes_referenced: Set[str] = field(default_factory=set)
     contracts_referenced: Set[str] = field(default_factory=set)
     set_types_used: Set[str] = field(default_factory=set)
     external_structs_used: Dict[str, str] = field(default_factory=dict)
@@ -91,6 +94,7 @@ class CodeGenerationContext:
     known_libraries: Set[str] = field(default_factory=set)
     known_contract_methods: Dict[str, Set[str]] = field(default_factory=dict)
     known_contract_vars: Dict[str, Set[str]] = field(default_factory=dict)
+    known_contract_constants: Dict[str, Set[str]] = field(default_factory=dict)
     known_public_state_vars: Set[str] = field(default_factory=set)
     known_public_mappings: Set[str] = field(default_factory=set)  # Public mappings needing getter methods
     known_method_return_types: Dict[str, Dict[str, str]] = field(default_factory=dict)
@@ -138,6 +142,7 @@ class CodeGenerationContext:
         """Reset state for a new file."""
         self.base_contracts_needed = set()
         self.libraries_referenced = set()
+        self.library_classes_referenced = set()
         self.contracts_referenced = set()
         self.set_types_used = set()
         self.external_structs_used = {}
@@ -205,6 +210,7 @@ class CodeGenerationContext:
             ctx.known_libraries = registry.libraries
             ctx.known_contract_methods = registry.contract_methods
             ctx.known_contract_vars = registry.contract_vars
+            ctx.known_contract_constants = registry.contract_constants
             ctx.known_public_state_vars = registry.known_public_state_vars
             ctx.known_public_mappings = registry.known_public_mappings
             ctx.known_method_return_types = registry.method_return_types

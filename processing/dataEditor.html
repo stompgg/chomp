@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>chomp data editor</title>
+    <style>
+      :root{
+        --surface:#1a1c2e; --surface-inset:#121212; --surface-deep:#13152e; --surface-deeper:#0d0f28;
+        --border:#4a4d5e; --border-soft:#2b2f45; --row-line:#232741;
+        --accent:#3135cd; --accent-bright:#5a5ff0;
+        /* Text scale — every value >=8.8:1 on every surface used here. */
+        --text-bright:#e8f3fc; --text-primary:#bbdcf5; --text-muted:#c2cadd; --text-dim:#b0b9cc;
+        --text-warm:#f5d96b; --text-warm-muted:#847849;
+        --good:#84cf88; --bad:#e87d69; --half:#7dd3fc;
+        --font-mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+        --radius-sm:4px; --radius-md:6px; --radius-pill:999px;
+        --page:#0a0b14;
+      }
+      *{box-sizing:border-box;}
+      html,body{margin:0;height:100%;background:var(--page);color:var(--text-primary);
+        font-family:var(--font-mono);font-size:13px;}
+      body{display:flex;flex-direction:column;}
+
+      .tabs{display:flex;gap:2px;background:var(--surface-deep);border-bottom:1px solid var(--border);
+        padding:0 10px;flex:none;align-items:center;}
+      .tab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:11px 14px;
+        color:var(--text-muted);border-bottom:2px solid transparent;cursor:pointer;background:none;
+        border-top:none;border-left:none;border-right:none;font-family:var(--font-mono);}
+      .tab:hover{color:var(--text-primary);}
+      .tab.on{color:var(--text-bright);border-bottom-color:var(--accent-bright);}
+      .savebar{display:flex;align-items:center;gap:10px;margin-left:auto;}
+      .pill{font-size:10.5px;padding:3px 8px;border-radius:var(--radius-pill);border:1px solid var(--border);
+        color:var(--text-muted);}
+      .pill.dirty{color:var(--text-warm);border-color:var(--text-warm-muted);}
+      .btn{font-family:var(--font-mono);font-size:11px;padding:5px 11px;border-radius:var(--radius-sm);
+        border:1px solid var(--border);background:var(--surface);color:var(--text-primary);cursor:pointer;}
+      .btn:hover:not(:disabled){background:#242740;}
+      .btn.go{background:#24592a;border-color:#3a7d40;color:#e2f7e4;}
+      .btn.go:hover:not(:disabled){background:#2d6b34;}
+      .btn:disabled{opacity:.45;cursor:default;}
+
+      #status{flex:none;font-size:11.5px;line-height:1.6;white-space:pre-line;padding:0;margin:0;}
+      #status.show{padding:8px 12px;background:#1b1f36;border-bottom:1px solid var(--border-soft);}
+      #status.error{color:#ffb3a3;} #status.ok{color:#a8e6ac;}
+
+      .page{flex:1 1 auto;min-height:0;display:none;}
+      .page.on{display:flex;flex-direction:column;}
+
+      .src{font-size:9.5px;letter-spacing:.06em;padding:2px 5px;border-radius:3px;text-transform:uppercase;}
+      .src.inline{background:#24592a;color:#dcf5de;}
+      .src.contract{background:#333f78;color:#d5dcff;}
+      .src.complex{background:#6b3f26;color:#fbe0c8;}
+      .src.missing{background:#6b2630;color:#ffd2d8;}
+
+      table{border-collapse:collapse;width:100%;font-size:11.5px;}
+      th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;text-align:left;
+        color:var(--text-muted);padding:7px 8px;border-bottom:1px solid var(--border);
+        position:sticky;top:0;background:var(--surface-deep);white-space:nowrap;z-index:1;}
+      th.num,td.num{text-align:right;width:1%;padding-left:3px;padding-right:5px;}
+      th.tight,td.tight{width:1%;padding-left:5px;padding-right:5px;}
+      td{padding:4px 8px;border-bottom:1px solid var(--row-line);color:var(--text-primary);white-space:nowrap;}
+      tr:hover td{background:#151830;}
+      .cell{background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text-bright);
+        font-family:var(--font-mono);font-size:11.5px;width:100%;padding:2px 4px;}
+      .cell:hover{border-color:#3a3f5e;}
+      .cell:focus{border-color:var(--accent-bright);outline:none;background:#0e1024;}
+      .cell.num{text-align:right;width:32px;padding:2px 3px;}
+      .cell[readonly]{color:var(--text-dim);font-style:italic;}
+      .cell.desc{min-width:300px;}
+      .cell.edited{background:#2a2410;border-color:var(--text-warm-muted);}
+      td.desc{white-space:normal;width:36%;}
+      select.cell{appearance:none;cursor:pointer;}
+      select.type{font-size:9.5px;padding:2px 5px;border-radius:3px;border:none;letter-spacing:.05em;}
+
+      .toolbar{display:flex;gap:8px;align-items:center;padding:9px 10px;flex:none;
+        border-bottom:1px solid var(--border-soft);flex-wrap:wrap;}
+      .toolbar input,.toolbar select{font-family:var(--font-mono);font-size:11px;
+        background:var(--surface-inset);color:var(--text-primary);border:1px solid var(--border);
+        border-radius:var(--radius-sm);padding:4px 7px;}
+      .toolbar label{font-size:10.5px;color:var(--text-muted);}
+      .count{font-size:11px;color:var(--text-muted);margin-left:auto;}
+      .scroll{flex:1 1 auto;min-height:0;overflow:auto;}
+
+      .tchip{font-size:9.5px;padding:2px 5px;border-radius:3px;letter-spacing:.05em;display:inline-block;}
+      .moncell{display:flex;align-items:center;gap:5px;color:var(--text-muted);}
+      .moncell img{width:22px;height:22px;image-rendering:pixelated;flex:none;}
+
+      .rail{width:140px;flex:none;border-right:1px solid var(--border-soft);overflow-y:auto;}
+      .railrow{display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;
+        border-left:2px solid transparent;}
+      .railrow:hover{background:#151830;}
+      .railrow.on{background:#191d40;border-left-color:var(--accent-bright);}
+      .railrow img{width:30px;height:30px;image-rendering:pixelated;}
+      .railrow .nm{font-size:11px;overflow:hidden;text-overflow:ellipsis;}
+      .railrow .dot{margin-left:auto;color:var(--text-warm);font-size:14px;line-height:1;}
+
+      .statrow{display:grid;grid-template-columns:52px 58px 1fr 84px;gap:8px;align-items:center;
+        padding:3px 5px;border-radius:4px;cursor:pointer;border:1px solid transparent;}
+      .statrow:hover{background:#151830;}
+      .statrow.on{background:#31397f;border-color:var(--accent-bright);}
+      .statlbl{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);}
+      .bar{height:7px;background:#1c2039;border-radius:var(--radius-pill);overflow:hidden;}
+      .bar span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-bright));}
+      .rankread{font-size:10.5px;color:var(--text-muted);text-align:right;}
+      .rankread b{color:var(--text-bright);font-weight:400;}
+      .rankread.tie b{color:var(--text-warm);}
+
+      /* distribution axis: roster min → max, one marker per mon */
+      .axis{position:relative;height:95px;margin:2px 22px 6px;}
+      .axisline{position:absolute;left:0;right:0;top:71px;height:2px;background:#2b2f45;}
+      .amark{position:absolute;transform:translateX(-50%);text-align:center;}
+      .amark.self{z-index:2;} .amark:hover{z-index:3;}
+      .amark img{width:24px;height:24px;image-rendering:pixelated;opacity:.75;}
+      .amark.self img{width:34px;height:34px;opacity:1;}
+      .amark:hover img{opacity:1;}
+      .amark .stem{width:1px;height:9px;background:var(--text-dim);margin:0 auto;}
+      .amark.self .stem{width:2px;background:var(--accent-bright);}
+      .amark .lab{font-size:10px;color:var(--text-bright);white-space:nowrap;visibility:hidden;}
+      .amark.self .lab,.amark:hover .lab{visibility:visible;}
+      .axisend{position:absolute;top:77px;font-size:10.5px;color:var(--text-muted);}
+
+      .rankrow{display:grid;grid-template-columns:30px 26px 1fr 54px 48px;gap:8px;align-items:center;
+        font-size:11px;padding:3px 0;border-bottom:1px solid var(--row-line);}
+      .rankrow.self{background:#31397f;border-radius:3px;box-shadow:inset 3px 0 0 var(--accent-bright);}
+      .rankrow img{width:24px;height:24px;image-rendering:pixelated;}
+      .rankrow .no{color:var(--text-dim);text-align:right;}
+      .rankrow .val{text-align:right;color:var(--text-bright);}
+      .rankrow .gap{text-align:right;color:var(--text-muted);}
+      .rankrow.tie .val,.rankrow.tie .gap{color:var(--text-warm);}
+
+      .panel{padding:10px 12px;}
+      .panel + .panel{border-top:1px solid var(--border-soft);}
+      .ptitle{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
+        margin:0 0 8px;display:flex;align-items:center;gap:7px;}
+      .ptitle .note{color:var(--text-dim);letter-spacing:0;text-transform:none;font-size:10px;}
+
+      .defrow{display:flex;gap:6px;align-items:baseline;margin-bottom:5px;flex-wrap:wrap;}
+      .deflbl{font-size:10.5px;width:34px;flex:none;text-align:right;}
+      .deflbl.x2{color:var(--bad);} .deflbl.x05{color:var(--half);} .deflbl.x0{color:var(--good);}
+
+      .threat{display:grid;grid-template-columns:26px 1fr 46px 42px 1.2fr;gap:8px;align-items:center;
+        font-size:11px;padding:3px 0;border-bottom:1px solid var(--row-line);}
+      .threat img{width:24px;height:24px;image-rendering:pixelated;}
+      .threat .mv{color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .threat .pct{text-align:right;color:var(--text-bright);}
+      .threat .hko{text-align:right;font-size:10.5px;}
+      .hko.k1{color:var(--bad);} .hko.k2{color:#f0b06a;} .hko.k3{color:var(--text-primary);}
+      .hko.k4{color:var(--text-muted);}
+      .mult{font-size:9.5px;padding:1px 4px;border-radius:3px;margin-left:5px;}
+      .mult.up{background:#5e2a1e;color:#ffc9ba;} .mult.dn{background:#17405a;color:#bde5f7;}
+      .mult.zero{background:#24592a;color:#dcf5de;}
+
+      .teamcard{background:#141731;border-radius:var(--radius-md);padding:9px 11px 11px;margin-bottom:9px;}
+      .teamhd{display:flex;align-items:center;gap:9px;margin-bottom:7px;}
+      .teamhd .lbl{font-size:11px;letter-spacing:.06em;color:var(--text-bright);}
+      .teamhd .warn{font-size:10.5px;color:var(--text-warm);}
+      .slots{display:flex;gap:8px;flex-wrap:wrap;}
+      .slot{width:92px;height:104px;border:1px solid var(--border-soft);border-radius:5px;background:#0f1226;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;}
+      .slot.sel{border-color:var(--text-warm);border-style:dashed;}
+      .slot.dupe{border-color:var(--bad);}
+      .slot .empty{color:var(--text-dim);font-size:10.5px;}
+      .slot img{width:56px;height:56px;image-rendering:pixelated;}
+      .slot .nm{font-size:10.5px;}
+      .rosterGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px;}
+      .rtile{background:#141731;border-radius:5px;padding:6px 2px;text-align:center;cursor:pointer;}
+      .rtile:hover{background:#1b1f3d;}
+      .rtile.used{opacity:.5;}
+      .rtile img{width:52px;height:52px;image-rendering:pixelated;}
+      .rtile .nm{font-size:10.5px;}
+    </style>
+  </head>
+  <body>
+    <div class="tabs">
+      <button class="tab on" data-tab="mons">Mons</button>
+      <button class="tab" data-tab="moves">Moves</button>
+      <button class="tab" data-tab="cpu">CPU teams</button>
+      <div class="savebar">
+        <span class="pill" id="dirty">no changes</span>
+        <button class="btn" id="revert">Revert</button>
+        <button class="btn go" id="save">Save &amp; sync</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+
+    <div class="page on" id="page-mons" style="flex-direction:row">
+      <div class="rail" id="m-rail"></div>
+      <div style="flex:1 1 0;display:flex;min-width:0;">
+        <div style="width:46%;border-right:1px solid var(--border-soft);overflow-y:auto;" id="m-left"></div>
+        <div style="flex:1 1 0;overflow-y:auto;min-width:0;" id="m-right"></div>
+      </div>
+    </div>
+
+    <div class="page" id="page-moves">
+      <div class="toolbar">
+        <input id="mv-q" placeholder="filter moves…" size="16" />
+        <select id="mv-mon"></select>
+        <select id="mv-src">
+          <option value="">all sources</option><option value="inline">inline only</option>
+          <option value="contract">contract only</option><option value="complex">complex only</option>
+        </select>
+        <label>description:</label>
+        <select id="mv-desc">
+          <option value="DevDescription">Dev</option>
+          <option value="BattleDescription">Battle</option>
+          <option value="UserDescription">User</option>
+        </select>
+        <span class="count" id="mv-count"></span>
+      </div>
+      <div class="scroll"><table id="mv-tbl"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="page" id="page-cpu" style="overflow-y:auto">
+      <div style="padding:11px 12px;">
+        <div id="c-teams"></div>
+        <button class="btn" id="c-add" style="margin:2px 0 14px">+ Add team</button>
+        <p class="ptitle">Roster</p>
+        <div class="rosterGrid" id="c-roster"></div>
+      </div>
+    </div>
+
+    <script>
+      const STATS = [
+        {k:'HP', label:'HP'},            {k:'Attack', label:'Atk'},
+        {k:'Defense', label:'Def'},      {k:'SpecialAttack', label:'SpAtk'},
+        {k:'SpecialDefense', label:'SpDef'}, {k:'Speed', label:'Speed'},
+      ];
+      const TARGET_SPECS = ['opponent-slot','self-only','none','any-other-slot','ally-slot','any-subset'];
+
+      const el = id => document.getElementById(id);
+      let state = null;                       // last payload from the server
+      let mons = [], moves = [], teams = [];  // working copies
+      let monEdits = new Set();               // "monId.Field"
+      let moveEdits = new Map();              // row index -> {field: value}
+      let cpuDirty = false;
+      let tab = 'mons';
+      let sel = 0, openStatKey = null, cSel = {team:0, slot:0};
+
+      // ---------- model ----------
+      const stat = (m, k) => m.stats[k];
+      const monById = id => mons.find(m => m.id === id);
+      function chip(t){
+        const meta = state.types[t];
+        return meta ? `<span class="tchip" style="background:${meta.bg};color:${meta.fg}">${meta.ab}</span>` : '';
+      }
+      const codeToMult = c => c === 0 ? 0 : c === 2 ? 2 : c === 5 ? 0.5 : 1;
+      function defenseMult(atkType, m){
+        let x = codeToMult((state.chart[atkType] || {})[m.t1] ?? 1);
+        if (m.t2) x *= codeToMult((state.chart[atkType] || {})[m.t2] ?? 1);
+        return x;
+      }
+      // Engine-faithful: scale base power per defender type with integer truncation, then atk/def.
+      function scaledPower(bp, atkType, m){
+        const apply = (p, dt) => {
+          const c = (state.chart[atkType] || {})[dt] ?? 1;
+          return c === 0 ? 0 : c === 2 ? p * 2 : c === 5 ? Math.floor(p / 2) : p;
+        };
+        let p = apply(bp, m.t1);
+        if (m.t2) p = apply(p, m.t2);
+        return p;
+      }
+      function damage(move, attacker, defender){
+        const bp = parseInt(move.Power, 10);
+        if (!bp || Number.isNaN(bp)) return null;            // 0-power and '?' moves
+        if (move.Class !== 'Physical' && move.Class !== 'Special') return null;
+        const physical = move.Class === 'Physical';
+        const atk = stat(attacker, physical ? 'Attack' : 'SpecialAttack');
+        const def = stat(defender,  physical ? 'Defense' : 'SpecialDefense');
+        return Math.floor(scaledPower(bp, move.Type, defender) * atk / def);
+      }
+      function bestHit(attacker, defender){
+        let best = null;
+        for (const mv of moves){
+          if (mv.Mon !== attacker.name) continue;
+          const d = damage(mv, attacker, defender);
+          if (d !== null && (!best || d > best.dmg)) best = {dmg:d, move:mv};
+        }
+        return best;
+      }
+      function threats(defender){
+        return mons.filter(m => m.id !== defender.id).map(a => {
+          const best = bestHit(a, defender);
+          if (!best) return null;
+          return {atk:a, ...best, mult:defenseMult(best.move.Type, defender),
+            pct: best.dmg / stat(defender,'HP') * 100,
+            hko: Math.max(1, Math.ceil(stat(defender,'HP') / best.dmg))};
+        }).filter(Boolean).sort((x,y) => y.dmg - x.dmg);
+      }
+      function ranking(mon, key){
+        const sorted = [...mons].sort((a,b) => stat(b,key) - stat(a,key));
+        const index = sorted.findIndex(m => m.id === mon.id);
+        return {rank:index + 1, of:sorted.length, sorted, index,
+          ties: sorted.filter(m => stat(m,key) === stat(mon,key) && m.id !== mon.id)};
+      }
+
+      // ---------- load / save ----------
+      async function load(){
+        const res = await fetch('/api/state');
+        state = await res.json();
+        mons = state.mons.map(m => ({...m, stats:{...m.stats}}));
+        moves = state.moves.map(m => ({...m}));
+        teams = state.cpuTeams.map(t => {
+          const slots = t.slice(0, state.teamSize);
+          while (slots.length < state.teamSize) slots.push(null);
+          return slots;
+        });
+        monEdits = new Set(); moveEdits = new Map(); cpuDirty = false;
+        openStatKey = null; cSel = {team:0, slot:0};
+        el('mv-mon').innerHTML = '<option value="">all mons</option>' +
+          mons.map(m => `<option>${m.name}</option>`).join('');
+        setStatus('');
+        renderAll();
+      }
+      function setStatus(text, kind){
+        el('status').textContent = text;
+        el('status').className = text ? `show ${kind || ''}` : '';
+      }
+      function dirtyCount(){
+        return tab === 'mons' ? monEdits.size : tab === 'moves' ? moveEdits.size : (cpuDirty ? 1 : 0);
+      }
+      function refreshSaveBar(){
+        const n = dirtyCount();
+        const label = tab === 'cpu'
+          ? (n ? 'unsaved changes' : 'no changes')
+          : (n ? `${n} edit${n === 1 ? '' : 's'}` : 'no changes');
+        el('dirty').textContent = label;
+        el('dirty').classList.toggle('dirty', n > 0);
+        el('save').disabled = !n;
+        el('revert').disabled = !(monEdits.size || moveEdits.size || cpuDirty);
+      }
+      async function post(url, body){
+        setStatus('Saving…');
+        const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body)});
+        const result = await res.json();
+        if (result.ok){
+          setStatus(result.log.join('\n'), 'ok');
+          const keep = result.log.join('\n');
+          await load();                       // resync badges/derived data from disk
+          setStatus(keep, 'ok');
+        } else {
+          setStatus(result.errors.join('\n'), 'error');
+          refreshSaveBar();
+        }
+      }
+      el('save').onclick = () => {
+        if (tab === 'mons'){
+          const ids = new Set([...monEdits].map(k => +k.split('.')[0]));
+          post('/api/save/mons', {mons: [...ids].map(id => {
+            const m = monById(id);
+            return {id, stats: Object.fromEntries(STATS.map(s => [s.k, stat(m, s.k)]))};
+          })});
+        } else if (tab === 'moves'){
+          post('/api/save/moves', {moves: [...moveEdits].map(([index, cells]) => ({index, cells}))});
+        } else {
+          if (teams.some(t => t.some(v => v === null))){
+            setStatus(`Every team needs exactly ${state.teamSize} mons before saving.`, 'error');
+            return;
+          }
+          post('/api/save/cpu-teams', {cpuPlayers: state.cpuPlayers, teams});
+        }
+      };
+      el('revert').onclick = load;
+
+      document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => {
+        tab = btn.dataset.tab;
+        document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b === btn));
+        document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === `page-${tab}`));
+        refreshSaveBar();
+      });
+
+      // ---------- mons tab ----------
+      function statRowHTML(mon, s){
+        const r = ranking(mon, s.k);
+        const max = Math.max(...mons.map(m => stat(m, s.k)));
+        const isOpen = openStatKey === s.k;
+        const edited = monEdits.has(`${mon.id}.${s.k}`);
+        return `<div class="statrow ${isOpen ? 'on' : ''}" data-rank="${s.k}">
+          <span class="statlbl">${s.label}</span>
+          <input class="cell num ${edited ? 'edited' : ''}" data-stat="${s.k}" value="${stat(mon, s.k)}"/>
+          <span class="bar"><span style="width:${stat(mon, s.k) / max * 100}%"></span></span>
+          <span class="rankread ${r.ties.length ? 'tie' : ''}">#<b>${r.rank}</b>/${r.of}${
+            r.ties.length ? ` =${r.ties.length}` : ''} ${isOpen ? '▾' : '▸'}</span>
+        </div>`;
+      }
+      function rankPanelHTML(mon, s){
+        const r = ranking(mon, s.k);
+        // Domain is the roster's own range, so the width shows spread rather than empty space below min.
+        const values = mons.map(m => stat(m, s.k));
+        const min = Math.min(...values), max = Math.max(...values);
+        const span = (max - min) || 1;
+        const marks = r.sorted.map((m, i) => {
+          const self = m.id === mon.id;
+          const stem = self || i % 2 ? 10 : 26;   // alternate heights so near-equal values don't overlap
+          return `<div class="amark ${self ? 'self' : ''}" title="${m.name} · ${stat(m, s.k)}"
+              style="left:${((stat(m, s.k) - min) / span * 100).toFixed(2)}%;bottom:24px">
+            <div class="lab">${stat(m, s.k)}</div>
+            <img src="${m.sprite}"/><div class="stem" style="height:${stem}px"></div></div>`;
+        }).join('');
+        const rows = r.sorted.map((m, i) => {
+          const self = m.id === mon.id;
+          const tie = !self && stat(m, s.k) === stat(mon, s.k);
+          const gap = stat(m, s.k) - stat(mon, s.k);
+          return `<div class="rankrow ${self ? 'self' : ''} ${tie ? 'tie' : ''}">
+            <span class="no">#${i + 1}</span><img src="${m.sprite}"/><span>${m.name}</span>
+            <span class="val">${stat(m, s.k)}</span>
+            <span class="gap">${self ? '—' : (gap > 0 ? '+' : '') + gap}</span></div>`;
+        }).join('');
+        return `<div class="panel">
+          <p class="ptitle">${s.label} ranking <span class="note">#${r.rank} of ${r.of}</span>
+            <span style="flex:1"></span><button class="btn" id="rank-close">✕</button></p>
+          <div class="axis"><div class="axisline"></div>${marks}
+            <span class="axisend" style="left:0">${min}</span>
+            <span class="axisend" style="right:0">${max}</span></div>
+          ${rows}</div>`;
+      }
+      function defenceHTML(mon){
+        const buckets = {};
+        Object.keys(state.chart).forEach(t => {
+          const x = defenseMult(t, mon);
+          if (x !== 1) (buckets[x] = buckets[x] || []).push(t);
+        });
+        const line = (mult, cls, label) => {
+          const list = buckets[mult] || [];
+          return list.length ? `<div class="defrow"><span class="deflbl ${cls}">${label}</span>${
+            list.map(chip).join(' ')}</div>` : '';
+        };
+        return (line(4,'x2','×4') + line(2,'x2','×2') + line(0.5,'x05','×½') +
+                line(0.25,'x05','×¼') + line(0,'x0','×0')) ||
+               '<div style="color:var(--text-muted);font-size:11px">all neutral</div>';
+      }
+      function threatRow(t){
+        const badge = t.mult > 1 ? `<span class="mult up">×${t.mult}</span>`
+                    : t.mult === 0 ? `<span class="mult zero">×0</span>`
+                    : t.mult < 1 ? `<span class="mult dn">×${t.mult}</span>` : '';
+        return `<div class="threat"><img src="${t.atk.sprite}"/><span>${t.atk.name}</span>
+          <span class="pct">${t.pct.toFixed(0)}%</span>
+          <span class="hko k${Math.min(4, t.hko)}">${t.hko}HKO</span>
+          <span class="mv">${t.move.Name}${badge}</span></div>`;
+      }
+      function renderMons(){
+        const mon = monById(sel) || mons[0];
+        if (!mon) return;
+        sel = mon.id;
+
+        el('m-rail').innerHTML = mons.map(m => {
+          const touched = [...monEdits].some(k => +k.split('.')[0] === m.id);
+          return `<div class="railrow ${m.id === sel ? 'on' : ''}" data-id="${m.id}">
+            <img src="${m.sprite}"/><span class="nm">${m.name}</span>
+            ${touched ? '<span class="dot">•</span>' : ''}</div>`;
+        }).join('');
+        el('m-rail').querySelectorAll('.railrow').forEach(r =>
+          r.onclick = () => { sel = +r.dataset.id; openStatKey = null; renderMons(); });
+
+        const bst = STATS.reduce((a, s) => a + stat(mon, s.k), 0);
+        const allBst = mons.map(m => STATS.reduce((a, s) => a + stat(m, s.k), 0)).sort((a, b) => b - a);
+        el('m-left').innerHTML = `
+          <div class="panel"><div style="display:flex;align-items:center;gap:10px;">
+            <img src="${mon.sprite}" style="width:52px;height:52px;image-rendering:pixelated"/>
+            <div><div style="font-size:14px;color:var(--text-bright)">${mon.name}
+              <span style="color:var(--text-muted);font-size:11px">#${mon.id}</span></div>
+              <div style="margin-top:3px">${chip(mon.t1)} ${mon.t2 ? chip(mon.t2) : ''}
+                <span style="color:var(--text-muted);font-size:10.5px;margin-left:6px">
+                  BST ${bst} · #${allBst.indexOf(bst) + 1}</span></div></div>
+          </div></div>
+          <div class="panel"><p class="ptitle">Stats</p>
+            ${STATS.map(s => statRowHTML(mon, s)).join('')}</div>
+          <div class="panel"><p class="ptitle">Takes damage from</p>${defenceHTML(mon)}</div>`;
+
+        const openStat = STATS.find(s => s.k === openStatKey);
+        el('m-right').innerHTML = openStat ? rankPanelHTML(mon, openStat) : `
+          <div class="panel">
+            <p class="ptitle">Threats <span class="note">worst single hit, no crit</span></p>
+            ${threats(mon).slice(0, 14).map(threatRow).join('')}
+          </div>
+          <div class="panel"><p class="ptitle">Offense mirror</p>
+            ${mons.filter(m => m.id !== mon.id).map(d => {
+              const best = bestHit(mon, d);
+              if (!best) return '';
+              const hko = Math.max(1, Math.ceil(stat(d,'HP') / best.dmg));
+              return threatRow({atk:d, move:best.move, mult:1,
+                pct: best.dmg / stat(d,'HP') * 100, hko}).replace(/<span class="mult[^<]*<\/span>/, '');
+            }).join('')}</div>`;
+
+        el('m-left').querySelectorAll('input[data-stat]').forEach(inp => {
+          inp.onclick = e => e.stopPropagation();      // editing the number must not toggle the row
+          inp.onchange = () => {
+            const key = inp.dataset.stat;
+            const v = parseInt(inp.value, 10);
+            if (Number.isNaN(v) || v <= 0){ inp.value = stat(mon, key); return; }
+            mon.stats[key] = v;
+            monEdits.add(`${mon.id}.${key}`);
+            renderMons(); refreshSaveBar();
+          };
+        });
+        el('m-left').querySelectorAll('.statrow').forEach(row => row.onclick = () => {
+          openStatKey = openStatKey === row.dataset.rank ? null : row.dataset.rank;
+          renderMons();
+        });
+        const close = el('rank-close');
+        if (close) close.onclick = () => { openStatKey = null; renderMons(); };
+      }
+
+      // ---------- moves tab ----------
+      const MV_COLS = [
+        {k:'Name', h:'Move', w:138}, {k:'Mon', h:'Mon', mon:1},
+        {k:'Power', h:'Pow', n:1}, {k:'Stamina', h:'Stm', n:1}, {k:'Accuracy', h:'Acc', n:1},
+        {k:'Priority', h:'Pri', n:1}, {k:'UnlockLevel', h:'Lv', n:1},
+        {k:'Type', h:'Type', type:1}, {k:'Class', h:'Class', pick:['Physical','Special','Self','Other']},
+        {k:'TargetSpec', h:'Target', pick:TARGET_SPECS},
+        {k:'Constants', h:'Constants', w:104},
+      ];
+      let mvSort = {k:'Mon', dir:1};
+      function editMove(row, field, value){
+        row[field] = value;
+        const cells = moveEdits.get(row.index) || {};
+        cells[field] = value;
+        moveEdits.set(row.index, cells);
+        refreshSaveBar();
+      }
+      function renderMoves(){
+        const q = el('mv-q').value.toLowerCase();
+        const monFilter = el('mv-mon').value, srcFilter = el('mv-src').value;
+        const dk = el('mv-desc').value;
+        const rows = moves
+          .filter(m => (!monFilter || m.Mon === monFilter) && (!srcFilter || m.src === srcFilter) &&
+                       (!q || (m.Name + m.Mon + m.Type + (m[dk] || '')).toLowerCase().includes(q)))
+          .sort((a, b) => {
+            const na = parseFloat(a[mvSort.k]), nb = parseFloat(b[mvSort.k]);
+            const c = (!Number.isNaN(na) && !Number.isNaN(nb))
+              ? na - nb : String(a[mvSort.k]).localeCompare(String(b[mvSort.k]));
+            return c * mvSort.dir;
+          });
+
+        el('mv-tbl').querySelector('thead').innerHTML = '<tr>' + MV_COLS.map(c =>
+          `<th class="${c.n ? 'num' : (c.mon || c.type || c.pick) ? 'tight' : ''}" data-k="${c.k}"
+            style="cursor:pointer">${c.h}${mvSort.k === c.k ? (mvSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`
+        ).join('') + `<th data-k="${dk}" style="cursor:pointer">Description</th><th>Source</th></tr>`;
+        el('mv-tbl').querySelectorAll('thead th[data-k]').forEach(th => th.onclick = () => {
+          mvSort = {k:th.dataset.k, dir: mvSort.k === th.dataset.k ? -mvSort.dir : 1};
+          renderMoves();
+        });
+
+        el('mv-tbl').querySelector('tbody').innerHTML = rows.map(m => {
+          const cells = moveEdits.get(m.index) || {};
+          const mark = f => cells[f] !== undefined ? 'edited' : '';
+          const cell = c => {
+            if (c.mon) return `<td class="tight"><span class="moncell">
+              <img src="${m.sprite}" alt=""/><span>${m.Mon}</span></span></td>`;
+            if (c.type){
+              const meta = state.types[m.Type] || {bg:'#333', fg:'#eee'};
+              return `<td class="tight"><select class="cell type ${mark('Type')}" data-i="${m.index}" data-f="Type"
+                style="background:${meta.bg};color:${meta.fg}">${Object.keys(state.types).map(t =>
+                  `<option ${t === m.Type ? 'selected' : ''}>${t}</option>`).join('')}</select></td>`;
+            }
+            if (c.pick) return `<td class="tight"><select class="cell ${mark(c.k)}" data-i="${m.index}"
+              data-f="${c.k}">${c.pick.map(v =>
+                `<option ${v === m[c.k] ? 'selected' : ''}>${v}</option>`).join('')}</select></td>`;
+            const ro = (m.src === 'complex' && ['Power','Stamina','Accuracy','Priority'].includes(c.k))
+              ? 'readonly' : '';
+            return `<td class="${c.n ? 'num' : ''}"><input class="cell ${c.n ? 'num' : ''} ${mark(c.k)}"
+              data-i="${m.index}" data-f="${c.k}" value="${(m[c.k] ?? '').replace(/"/g,'&quot;')}" ${ro}
+              style="${c.w ? `width:${c.w}px` : ''}"/></td>`;
+          };
+          return `<tr>${MV_COLS.map(cell).join('')}
+            <td class="desc"><input class="cell desc ${mark(dk)}" data-i="${m.index}" data-f="${dk}"
+              value="${(m[dk] || '').replace(/"/g,'&quot;')}"/></td>
+            <td><span class="src ${m.src}">${m.src}</span>
+              <span style="color:var(--text-dim);font-size:10.5px;margin-left:6px">${m.file}</span></td></tr>`;
+        }).join('');
+
+        el('mv-tbl').querySelectorAll('[data-f]').forEach(input => input.onchange = () =>
+          editMove(moves.find(m => m.index === +input.dataset.i), input.dataset.f, input.value));
+
+        const count = s => moves.filter(m => m.src === s).length;
+        el('mv-count').textContent = `${rows.length} / ${moves.length} moves · ` +
+          `${count('inline')} inline · ${count('contract')} contract · ${count('complex')} complex`;
+      }
+      ['mv-q','mv-mon','mv-src','mv-desc'].forEach(id => el(id).addEventListener('input', renderMoves));
+
+      // ---------- cpu teams tab ----------
+      function renderCpu(){
+        const used = new Set(teams.flat().filter(v => v !== null));
+        el('c-teams').innerHTML = teams.map((team, ti) => {
+          const seen = new Map(), dupes = new Set();
+          team.forEach((id, si) => { if (id === null) return;
+            if (seen.has(id)) { dupes.add(si); dupes.add(seen.get(id)); } else seen.set(id, si); });
+          const empty = team.filter(v => v === null).length;
+          const warn = [empty ? `${empty} empty` : '', dupes.size ? 'duplicate mon' : ''].filter(Boolean).join(' · ');
+          return `<div class="teamcard">
+            <div class="teamhd"><span class="lbl">Team ${ti + 1}</span><span class="warn">${warn}</span>
+              <span style="flex:1"></span>
+              <button class="btn" ${teams.length === 1 ? 'disabled' : ''} data-del="${ti}">Remove team</button></div>
+            <div class="slots">${team.map((id, si) => {
+              const m = monById(id);
+              const selected = cSel.team === ti && cSel.slot === si ? 'sel' : '';
+              return `<div class="slot ${selected} ${dupes.has(si) ? 'dupe' : ''}" data-t="${ti}" data-s="${si}">${
+                m ? `<img src="${m.sprite}"/><span class="nm">${m.name}</span>
+                     <span>${chip(m.t1)} ${m.t2 ? chip(m.t2) : ''}</span>`
+                  : '<span class="empty">empty</span>'}</div>`;
+            }).join('')}</div></div>`;
+        }).join('');
+
+        el('c-roster').innerHTML = mons.map(m =>
+          `<div class="rtile ${used.has(m.id) ? 'used' : ''}" data-id="${m.id}">
+            <img src="${m.sprite}"/><div class="nm">${m.name}</div>
+            <div>${chip(m.t1)} ${m.t2 ? chip(m.t2) : ''}</div></div>`).join('');
+
+        el('c-teams').querySelectorAll('.slot').forEach(s => s.onclick = () => {
+          const t = +s.dataset.t, si = +s.dataset.s;
+          if (teams[t][si] !== null){ teams[t][si] = null; cpuDirty = true; }
+          cSel = {team:t, slot:si};
+          renderCpu(); refreshSaveBar();
+        });
+        el('c-teams').querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+          teams.splice(+b.dataset.del, 1);
+          cSel = {team:0, slot:0}; cpuDirty = true;
+          renderCpu(); refreshSaveBar();
+        });
+        el('c-roster').querySelectorAll('.rtile').forEach(t => t.onclick = () => {
+          teams[cSel.team][cSel.slot] = +t.dataset.id;
+          const next = teams[cSel.team].indexOf(null);
+          if (next !== -1) cSel = {team:cSel.team, slot:next};
+          cpuDirty = true;
+          renderCpu(); refreshSaveBar();
+        });
+      }
+      el('c-add').onclick = () => {
+        teams.push(new Array(state.teamSize).fill(null));
+        cSel = {team:teams.length - 1, slot:0}; cpuDirty = true;
+        renderCpu(); refreshSaveBar();
+      };
+
+      function renderAll(){ renderMons(); renderMoves(); renderCpu(); refreshSaveBar(); }
+      load();
+    </script>
+  </body>
+</html>

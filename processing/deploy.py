@@ -2,7 +2,7 @@
 """
 Meta-script to orchestrate the full deployment pipeline:
 1. Validate move contracts against CSV data
-2. Generate Solidity deploy scripts (SetupMons.s.sol, SetupCPU.s.sol)
+2. Generate Solidity deploy scripts (script/mons/Setup<Mon>.s.sol, SetupCPU.s.sol)
 3. Run the forge scripts -> parse output -> update .env (raw addresses)
 4. Run the TypeScript generators (addresses/ABIs -> deployments.json + munch/belch
    address.ts; mon data, event layouts, EIP-712 meta)
@@ -36,12 +36,18 @@ ACCOUNT = "defaultKey"
 DEFAULT_RPC_MAINNET = "https://mainnet.megaeth.com/rpc"
 DEFAULT_RPC_TESTNET = "https://carrot.megaeth.com/rpc"
 
-# Script paths relative to chomp directory
-SCRIPTS = [
-    "script/EngineAndPeriphery.s.sol",
-    "script/SetupMons.s.sol",
-    "script/SetupCPU.s.sol",
-]
+def build_script_list(chomp_dir: Path) -> list[str]:
+    """forge targets to broadcast, in order: periphery, then one script per mon, then CPU teams.
+
+    Mon order comes from mons.csv (ascending id) because createMon rejects non-sequential ids.
+    """
+    from generateSolidity import mon_script_targets
+
+    return [
+        "script/EngineAndPeriphery.s.sol",
+        *mon_script_targets(str(chomp_dir)),
+        "script/SetupCPU.s.sol",
+    ]
 
 
 def get_chomp_dir() -> Path:
@@ -87,7 +93,8 @@ def update_env_file(matches: list[tuple[str, str]], env_path: Path):
 
     # Add new addresses
     for name, address in matches:
-        key = name.upper().replace(" ", "_").replace("-", "_")
+        # Drop characters that are invalid in an env var name (e.g. "King's Leisure").
+        key = re.sub(r'[^A-Z0-9_]', '', name.upper().replace(" ", "_").replace("-", "_"))
         existing[key] = address
 
     # Write back sorted
@@ -186,7 +193,7 @@ def run_forge_script(
         "--skip-simulation",
         "--legacy",
         "--non-interactive",
-        "-g", "105",
+        "-g", "100",
         "--slow",
     ]
     # password is None on dry runs (never prompted); only pass it when present.
@@ -338,7 +345,12 @@ def run_deploy(args, network, rpc_url, password, chomp_dir, env_path):
         if not run_validate():
             raise RuntimeError("Move validation failed. Fix issues before deploying.")
 
-        print_banner("Generating Solidity deployment script (SetupMons.s.sol)")
+        print_banner("Validating effect getStepsBitmap() ALWAYS_APPLIES_BIT usage")
+        from validateEffectBitmaps import run as run_validate_effect_bitmaps
+        if not run_validate_effect_bitmaps():
+            raise RuntimeError("Effect bitmap validation failed. Fix issues before deploying.")
+
+        print_banner("Generating per-mon Solidity deployment scripts (script/mons/)")
         from generateSolidity import run as run_solidity
         if not run_solidity():
             raise RuntimeError("Solidity generation failed.")
@@ -358,7 +370,7 @@ def run_deploy(args, network, rpc_url, password, chomp_dir, env_path):
             set_env_network(env_path, network)
 
         # Run forge scripts and update .env after each.
-        for script_path in SCRIPTS:
+        for script_path in build_script_list(chomp_dir):
             # EngineAndPeriphery deploys a new GachaTeamRegistry; point it at the prior
             # one (from the canonical deployments record for this network) so players can migrate.
             extra_env = None

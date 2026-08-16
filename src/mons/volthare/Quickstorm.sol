@@ -12,6 +12,7 @@ import {TargetLib} from "../../lib/TargetLib.sol";
 import {StandardAttack} from "../../moves/StandardAttack.sol";
 import {ATTACK_PARAMS} from "../../moves/StandardAttackStructs.sol";
 import {ITypeCalculator} from "../../types/ITypeCalculator.sol";
+import {QuickstormLib} from "./QuickstormLib.sol";
 
 contract Quickstorm is StandardAttack {
     IEffect immutable ZAP_STATUS;
@@ -38,12 +39,6 @@ contract Quickstorm is StandardAttack {
         ZAP_STATUS = _ZAP_STATUS;
     }
 
-    // Shared with PreemptiveShock's switch-in anchor: the turn Volthare first gets to act after
-    // entering play. Only that turn matches, so Quickstorm is a strict first-action-only move.
-    function _windowKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, "QUICKSTORM"))));
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,
@@ -55,7 +50,8 @@ contract Quickstorm is StandardAttack {
         uint256 rng
     ) public override {
         // Anchor stores firstActTurn+1 (0 = unset); usable only on that turn.
-        uint192 anchor = engine.getGlobalKV(battleKey, _windowKey(attackerPlayerIndex, attackerMonIndex));
+        uint192 anchor =
+            engine.getGlobalKV(battleKey, QuickstormLib._windowKey(attackerPlayerIndex, attackerMonIndex));
         if (anchor == 0 || uint256(anchor - 1) != engine.getTurnIdForBattleState(battleKey)) {
             return;
         }

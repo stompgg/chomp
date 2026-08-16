@@ -15,12 +15,8 @@ contract Chronoffense is IMoveSet {
     uint32 public constant BP_CAP = 999;
     uint8 public constant BOOST_PERCENT = 25;
 
-    function name() public pure returns (string memory) {
-        return "Chronoffense";
-    }
-
-    function _anchorKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode("Chronoffense", playerIndex, monIndex))));
+    function _anchorKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(address(this), playerIndex, monIndex))));
     }
 
     function move(

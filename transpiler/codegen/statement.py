@@ -519,10 +519,38 @@ class StatementGenerator(BaseGenerator):
     # ASSEMBLY
     # =========================================================================
 
+    def _slot_layout_of(self, var_name: str):
+        """(slot-0 layout, member TypeNames) for a struct-typed local, or None.
+
+        Assembly reaching a raw slot has to be reconciled with the modelled
+        fields; only the statement layer knows local variable types.
+        """
+        from ..type_system.slots import slot_zero
+
+        registry = getattr(self._ctx, '_registry', None)
+        if registry is None:
+            return None
+        type_name = self._ctx.var_types.get(var_name)
+        if type_name is None or not getattr(type_name, 'name', None):
+            return None
+        struct = registry.struct_defs.get(type_name.name)
+        if struct is None:
+            return None
+        layout = slot_zero(
+            struct,
+            enum_names=registry.enums,
+            struct_names=registry.structs,
+            structs=registry.struct_defs,
+        )
+        if layout is None:
+            return None
+        member_types = {m.name: m.type_name for m in struct.members}
+        return layout, member_types
+
     def generate_assembly_statement(self, stmt: AssemblyStatement) -> str:
         """Generate TypeScript code for an assembly block (transpiled from Yul)."""
         yul_code = stmt.block.code
-        ts_code = self._yul_transpiler.transpile(yul_code)
+        ts_code = self._yul_transpiler.transpile(yul_code, self._slot_layout_of)
         if self._yul_transpiler.unmodelable:
             self._ctx.current_function_unmodelable = True
         lines = []

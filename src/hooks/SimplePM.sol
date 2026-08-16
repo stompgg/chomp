@@ -17,6 +17,7 @@ struct PMBalance {
 
 contract SimplePM {
     error TooLate(uint256 turnId);
+    error GameOver(bytes32 battleKey);
     error GameNotOver(bytes32 battleKey);
     error InvalidBattle(bytes32 battleKey);
 
@@ -48,6 +49,11 @@ contract SimplePM {
         BattleContext memory ctx = ENGINE.getBattleContext(battleKey);
         if (ctx.startTimestamp == 0) {
             revert InvalidBattle(battleKey);
+        }
+        // A settled battle's outcome is public, so a late bet on the winner would redeem the losing
+        // side's deposits risk-free. winnerIndex 2 = no winner; checked off the context we already hold.
+        if (ctx.winnerIndex != 2) {
+            revert GameOver(battleKey);
         }
         uint256 turnId = uint256(ctx.turnId) + _bufferedTurnCount(battleKey);
         if (turnId > LAST_TURN_TO_JOIN) {

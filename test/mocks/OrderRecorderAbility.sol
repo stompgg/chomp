@@ -16,10 +16,6 @@ contract OrderRecorderAbility is IAbility, BasicEffect {
     // entry = (uint8(step) << 16) | (side << 8) | monIndex
     uint256[] public entries;
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Order Recorder";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         (bool exists,,) = engine.getEffectData(battleKey, playerIndex, monIndex, address(this));
         if (!exists) {
@@ -27,7 +23,7 @@ contract OrderRecorderAbility is IAbility, BasicEffect {
         }
     }
 
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return uint16(
             ALWAYS_APPLIES_BIT | (1 << uint8(EffectStep.RoundStart)) | (1 << uint8(EffectStep.RoundEnd))
                 | (1 << uint8(EffectStep.AfterMove))

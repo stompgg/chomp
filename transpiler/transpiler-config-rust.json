@@ -17,6 +17,8 @@
     "lib/TargetLib.sol",
     "lib/ValidatorLogic.sol",
     "moves/IMoveSet.sol",
+    "moves/IMoveResolver.sol",
+    "moves/MoveCommandLib.sol",
     "moves/MoveSlotLib.sol",
     "moves/AttackCalculator.sol",
     "moves/StandardAttack.sol",
@@ -73,11 +75,13 @@
   ],
   "dispatchInterfaces": [
     "IMoveSet",
+    "IMoveResolver",
     "IEffect",
+    "IEffectResolver",
+    "IStatusEffect",
     "IAbility"
   ],
   "duckDispatchMethods": [
-    "basePower",
     "accuracy"
   ]
 }

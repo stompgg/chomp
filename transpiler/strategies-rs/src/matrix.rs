@@ -85,7 +85,7 @@ pub fn compute_static_matrix(roster: &Roster) -> StaticMatrix {
                 if let Some(slot) = move_slot(&mut sim, obs, bk, VOPP, 0, mi) {
                     let mc = slot_move_class(&mut sim, bk, slot);
                     if mc == MoveClass::Physical || mc == MoveClass::Special {
-                        let d = estimate_damage(&mut sim, bk, &mut ctx, slot, mc);
+                        let d = estimate_damage(&mut sim, bk, &mut ctx, VOPP, 0, slot);
                         if d > best {
                             best = d;
                         }

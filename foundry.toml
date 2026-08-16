@@ -4,7 +4,7 @@ src = 'src'
 out = 'out'
 libs = ['lib']
 optimizer = true
-optimizer_runs = 4294967295
+optimizer_runs = 10000
 # @see {@link https://github.com/foundry-rs/foundry/issues/4060}
 auto_detect_remappings = false
 bytecode_hash = "none"
@@ -23,6 +23,18 @@ yul = true
 
 [profile.default.optimizer_details.yulDetails]
 stackAllocation = true
+
+# Fast correctness iteration for Engine-heavy changes. This deliberately does NOT produce
+# comparable gas numbers: keep the default profile for snapshots and final benchmarks.
+# Separate artifacts preserve both caches when switching profiles.
+[profile.fast]
+out = 'out-fast'
+cache_path = 'cache-fast'
+optimizer = false
+via_ir = true
+sparse_mode = true
+build_info = false
+gas_snapshot_emit = false
 
 [fmt]
 sort_imports = true

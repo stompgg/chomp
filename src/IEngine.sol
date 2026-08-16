@@ -12,8 +12,8 @@ interface IEngine {
     function battleKeyForWrite() external view returns (bytes32);
     function tempRNG() external view returns (uint256);
 
-    // PreDamage threading: hooks read the running damage and call setPreDamage to mutate it.
-    function getPreDamage() external view returns (int32);
+    // PreDamage threading: hooks read the running damage from their packed hook context
+    // (TargetLib.hookPreDamage) and call setPreDamage to mutate it.
     function setPreDamage(int32 value) external;
 
     // State mutating effects
@@ -23,6 +23,7 @@ interface IEngine {
         external;
     function addEffect(uint256 targetIndex, uint256 monIndex, IEffect effect, bytes32 extraData) external;
     function removeEffect(uint256 targetIndex, uint256 monIndex, uint256 effectIndex) external;
+    function clearMonStatus(uint256 targetIndex, uint256 monIndex, uint256 expectedClass) external returns (bool);
     function editEffect(uint256 targetIndex, uint256 effectIndex, bytes32 newExtraData) external;
     function setGlobalKV(uint64 key, uint192 value) external;
     // Inlined stat boosts (formerly the StatBoosts effect contract). Keyed by msg.sender.
@@ -61,6 +62,19 @@ interface IEngine {
         uint256 rng,
         uint256 critRate
     ) external returns (int32 damage, bytes32 eventType);
+    /// @notice Spread variant of dispatchCustomAttack: targetBits is a full slot mask.
+    function dispatchCustomAttackMulti(
+        uint256 attackerPlayerIndex,
+        uint256 attackerMonIndex,
+        uint256 targetBits,
+        uint32 basePower,
+        uint32 accuracy,
+        uint256 volatility,
+        Type moveType,
+        MoveClass moveClass,
+        uint256 rng,
+        uint256 critRate
+    ) external returns (int32 totalDamage);
     function switchActiveMon(uint256 playerIndex, uint256 monToSwitchIndex) external;
     function setMove(bytes32 battleKey, uint256 playerIndex, uint8 moveIndex, uint104 salt, uint16 extraData) external;
     function execute(bytes32 battleKey) external returns (address winner);
@@ -140,15 +154,15 @@ interface IEngine {
         view
         returns (bytes32 battleKey, bytes32 partyHash);
     function getSeats(bytes32 battleKey) external view returns (address[4] memory seats);
-    function computePriorityPlayerIndex(bytes32 battleKey, uint256 rng) external view returns (uint256);
     // Per-slot "has acted (or is acting) this turn" — the mode-agnostic primitive status effects
     // use to decide between an immediate move-cancel and waiting for next RoundStart.
     function hasSlotActedThisTurn(uint256 absSlot) external view returns (bool);
-    // The roster range a slot may switch within (Multi partitions each side by seat quarter).
-    function getRosterBoundsForSlot(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
+    // The roster range a slot may switch within (Multi partitions each side by seat quarter),
+    // bundled with the side's KO bitmap so a switch-target search is a single call.
+    function getSlotSwitchWindow(bytes32 battleKey, uint256 playerIndex, uint256 slotIndex)
         external
         view
-        returns (uint256 lo, uint256 hi);
+        returns (uint256 lo, uint256 hi, uint256 koBitmap);
     function getStorageKey(bytes32 battleKey) external view returns (bytes32);
     function getBattle(bytes32 battleKey) external view returns (BattleConfigView memory, BattleData memory);
     function getMonValueForBattle(
@@ -167,6 +181,11 @@ interface IEngine {
         uint256 monIndex,
         MonStateIndexName stateVarIndex
     ) external view returns (int32);
+    // Focused overheal-clamp snapshot: both HP quantities in one external frame.
+    function getMonHpState(bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
+        external
+        view
+        returns (uint32 maxHp, int32 hpDelta);
     // Current (base + delta, sentinel-aware) stat value in one call — the merged form of the
     // getMonValueForBattle + getMonStateForBattle pair.
     function getMonCurrentValue(
@@ -179,13 +198,7 @@ interface IEngine {
         external
         view
         returns (uint256);
-    function getMoveDecisionForBattleState(bytes32 battleKey, uint256 playerIndex)
-        external
-        view
-        returns (MoveDecision memory);
-    function getTeamSize(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getTurnIdForBattleState(bytes32 battleKey) external view returns (uint256);
-    function getActiveMonIndexForBattleState(bytes32 battleKey) external view returns (uint256[] memory);
     function getGlobalKV(bytes32 battleKey, uint64 key) external view returns (uint192);
     function validatePlayerMoveForBattle(bytes32 battleKey, uint256 moveIndex, uint256 playerIndex, uint16 extraData)
         external
@@ -198,6 +211,7 @@ interface IEngine {
         external
         view
         returns (bool exists, uint256 effectIndex, bytes32 data);
+    function getMonStatusClass(bytes32 battleKey, uint256 targetIndex, uint256 monIndex) external view returns (uint256);
     function getWinner(bytes32 battleKey) external view returns (address);
     function getKOBitmap(bytes32 battleKey, uint256 playerIndex) external view returns (uint256);
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory);

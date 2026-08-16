@@ -16,10 +16,6 @@ contract CarrotHarvest is IAbility, BasicEffect {
     uint256 constant CHANCE = 2;
 
     // IAbility implementation
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Carrot Harvest";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         external
         override
@@ -35,7 +31,7 @@ contract CarrotHarvest is IAbility, BasicEffect {
     }
 
     // Steps: RoundEnd
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8004;
     }
 

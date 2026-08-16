@@ -15,6 +15,9 @@ your own effects!
 
 your own hooks!
 
+your own CPU! — see **[BENCH.md](BENCH.md)**: write a bot, score it against a ladder of
+built-in opponents, with the real battle engine as your forward model.
+
 general flow of the game is: 
 - each turn, players simultaneously choose a move on their active mon.
 - moves can alter stats, do damage, or generally mutate game state in some way.
@@ -27,7 +30,7 @@ mechanical differences are:
 - far greater support for state-based moves / mechanics
 - stamina-based resource system instead of PP for balancing moves
 
-## Getting Started
+## getting started
 
 This repo uses [foundry](https://book.getfoundry.sh/getting-started/installation).
 
@@ -37,7 +40,16 @@ To get started:
 
 `forge test`
 
-## Main Components
+## game data
+
+mon stats, move rows, and CPU teams live in `drool/mons.csv`, `drool/moves.csv`, and
+`script/cpu-teams.json`.
+
+There's a local visual editor at:
+
+`python processing/editData.py`
+
+## solidity components
 
 ### Engine.sol
 Main entry point for creating/advancing Battles.

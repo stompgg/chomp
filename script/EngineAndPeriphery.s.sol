@@ -15,7 +15,13 @@ import {IGachaRNG} from "../src/rng/IGachaRNG.sol";
 import {TypeCalculator} from "../src/types/TypeCalculator.sol";
 
 // Shared effects
+import {DefaultRuleset} from "../src/DefaultRuleset.sol";
+import {IEffect} from "../src/effects/IEffect.sol";
+import {ElementalField} from "../src/effects/battlefield/ElementalField.sol";
+import {FluxField} from "../src/effects/battlefield/FluxField.sol";
 import {Overclock} from "../src/effects/battlefield/Overclock.sol";
+import {Storm} from "../src/effects/battlefield/Storm.sol";
+import {UnstableField} from "../src/effects/battlefield/UnstableField.sol";
 import {BlessedStatus} from "../src/effects/status/BlessedStatus.sol";
 import {BurnStatus} from "../src/effects/status/BurnStatus.sol";
 import {FrostbiteStatus} from "../src/effects/status/FrostbiteStatus.sol";
@@ -78,15 +84,18 @@ contract EngineAndPeriphery is Script {
         SimplePM simplePM = new SimplePM(engine);
         deployedContracts.push(DeployData({name: "SIMPLE PM", contractAddress: address(simplePM)}));
 
-        deployGameFundamentals();
+        deployGameFundamentals(engine);
 
         vm.stopBroadcast();
         return deployedContracts;
     }
 
-    function deployGameFundamentals() public {
+    function deployGameFundamentals(Engine engine) public {
         Overclock overclock = new Overclock();
         deployedContracts.push(DeployData({name: "OVERCLOCK", contractAddress: address(overclock)}));
+
+        Storm storm = new Storm();
+        deployedContracts.push(DeployData({name: "STORM", contractAddress: address(storm)}));
 
         SleepStatus sleepStatus = new SleepStatus();
         deployedContracts.push(DeployData({name: "SLEEP STATUS", contractAddress: address(sleepStatus)}));
@@ -105,5 +114,55 @@ contract EngineAndPeriphery is Script {
 
         BlessedStatus blessedStatus = new BlessedStatus();
         deployedContracts.push(DeployData({name: "BLESSED STATUS", contractAddress: address(blessedStatus)}));
+
+        deployBattlefieldFields(engine, sleepStatus, panicStatus, frostbiteStatus, burnStatus, zapStatus);
+    }
+
+    /// @dev Optional battlefield fields, each paired with the ruleset a client selects it by. The
+    ///      marker entry in each ruleset is what keeps the Engine's inline stamina regen: full for
+    ///      Elemental / Unstable, resting-only for Flux (which owns round-end stamina itself).
+    function deployBattlefieldFields(
+        Engine engine,
+        SleepStatus sleepStatus,
+        PanicStatus panicStatus,
+        FrostbiteStatus frostbiteStatus,
+        BurnStatus burnStatus,
+        ZapStatus zapStatus
+    ) internal {
+        ElementalField elementalField =
+            new ElementalField(burnStatus, frostbiteStatus, sleepStatus, panicStatus, zapStatus);
+        deployedContracts.push(DeployData({name: "ELEMENTAL FIELD", contractAddress: address(elementalField)}));
+
+        UnstableField unstableField = new UnstableField();
+        deployedContracts.push(DeployData({name: "UNSTABLE FIELD", contractAddress: address(unstableField)}));
+
+        FluxField fluxField = new FluxField();
+        deployedContracts.push(DeployData({name: "FLUX FIELD", contractAddress: address(fluxField)}));
+
+        deployedContracts.push(
+            DeployData({
+                name: "ELEMENTAL FIELD RULESET",
+                contractAddress: address(_fieldRuleset(engine, elementalField, INLINE_STAMINA_REGEN_RULESET))
+            })
+        );
+        deployedContracts.push(
+            DeployData({
+                name: "UNSTABLE FIELD RULESET",
+                contractAddress: address(_fieldRuleset(engine, unstableField, INLINE_STAMINA_REGEN_RULESET))
+            })
+        );
+        deployedContracts.push(
+            DeployData({
+                name: "FLUX FIELD RULESET",
+                contractAddress: address(_fieldRuleset(engine, fluxField, INLINE_REST_REGEN_MARKER))
+            })
+        );
+    }
+
+    function _fieldRuleset(Engine engine, IEffect field, address regenMarker) internal returns (DefaultRuleset) {
+        IEffect[] memory effects = new IEffect[](2);
+        effects[0] = IEffect(regenMarker);
+        effects[1] = field;
+        return new DefaultRuleset(engine, effects);
     }
 }

@@ -8,8 +8,12 @@ Uses a proper recursive descent parser instead of regex for reliable handling
 of nested constructs (if blocks, for loops, switch/case, nested function calls).
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+
+# Bigint literals (decimal or hex) — statically bigint, never need a BigInt() wrap.
+_BIGINT_LITERAL_RE = re.compile(r'(?:0x[0-9a-fA-F]+|\d+)n')
 
 
 # =============================================================================
@@ -612,6 +616,9 @@ class YulTranspiler:
         self._known_constants = known_constants or set()
         self._warnings: List[str] = []
         self._unmodelable = False
+        # var name -> (SlotLayout, {member: TypeName}); set per block by the
+        # caller, which is the only layer that knows local variable types.
+        self._slot_resolver = None
 
     @property
     def warnings(self) -> List[str]:
@@ -624,7 +631,95 @@ class YulTranspiler:
         cannot be faithfully simulated — the caller should stub the function."""
         return self._unmodelable
 
-    def transpile(self, yul_code: str) -> str:
+    # =====================================================================
+    # Whole-slot access against the modelled fields
+    # =====================================================================
+
+    def _slot_target(self, expr, slot_vars: Dict[str, str]):
+        """(var name, layout, member types) for a slot expression, or None."""
+        if self._slot_resolver is None:
+            return None
+        name = None
+        if isinstance(expr, YulSlotAccess):
+            name = expr.variable
+        elif isinstance(expr, YulIdentifier) and expr.name in slot_vars:
+            name = slot_vars[expr.name]
+        if name is None:
+            return None
+        resolved = self._slot_resolver(name)
+        if resolved is None:
+            return None
+        layout, member_types = resolved
+        return name, layout, member_types
+
+    @staticmethod
+    def _member_pack(access: str, tn) -> Optional[str]:
+        """Widen a member to its slot bits as a bigint expression."""
+        t = (tn.name or '').strip() if tn is not None else ''
+        if not t or (tn is not None and (tn.is_array or tn.is_mapping)):
+            return None
+        if t == 'bool':
+            return f'({access} ? 1n : 0n)'
+        if t.startswith('uint') or t.startswith('bytes') or t == 'address':
+            return f'BigInt({access})'
+        if t.startswith('int'):
+            bits = t[3:] or '256'
+            return f'BigInt.asUintN({bits}, BigInt({access}))'
+        # enums are numbers; every other user-defined name is a contract ref
+        return f'BigInt({access}?._contractAddress ?? {access} ?? 0n)'
+
+    @staticmethod
+    def _member_unpack(word: str, tn, bits: int) -> Optional[str]:
+        """Narrow a slot-bit slice back to a member value."""
+        t = (tn.name or '').strip() if tn is not None else ''
+        mask = f'((1n << {bits}n) - 1n)'
+        if not t or (tn is not None and (tn.is_array or tn.is_mapping)):
+            return None
+        if t == 'bool':
+            return f'((({word}) & {mask}) !== 0n)'
+        if t.startswith('uint'):
+            return f'((({word}) & {mask}))'
+        if t.startswith('int'):
+            return f'BigInt.asIntN({t[3:] or "256"}, ({word}))'
+        if t == 'address' or not (t.startswith('bytes')):
+            return f'Contract.at((({word}) & {mask}))'
+        return None
+
+    def _emit_slot_read(self, target) -> Optional[str]:
+        name, layout, member_types = target
+        terms = []
+        for f in layout.fields:
+            packed = self._member_pack(f'{name}.{f.name}', member_types.get(f.name))
+            if packed is None:
+                return None
+            terms.append(packed if f.bit_offset == 0 else f'({packed} << {f.bit_offset}n)')
+        if layout.has_free_bits:
+            # Bits no member declares still need somewhere to live; the shadow
+            # slot store keeps carrying exactly those.
+            terms.append(
+                f'(this._storageRead({name} as any) '
+                f'& {hex(layout.free_mask)}n)'
+            )
+        return '(' + ' | '.join(terms) + ')' if terms else '0n'
+
+    def _emit_slot_write(self, target, value: str, prefix: str) -> Optional[str]:
+        name, layout, member_types = target
+        tmp = '__slotWord'
+        lines = [f'{prefix}const {tmp} = BigInt({value});']
+        for f in layout.fields:
+            src = tmp if f.bit_offset == 0 else f'({tmp} >> {f.bit_offset}n)'
+            val = self._member_unpack(src, member_types.get(f.name), f.bit_width)
+            if val is None:
+                return None
+            lines.append(f'{prefix}{name}.{f.name} = {val};')
+        if layout.has_free_bits:
+            lines.append(
+                f'{prefix}this._storageWrite({name} as any, '
+                f'{tmp} & {hex(layout.free_mask)}n);'
+            )
+        return '\n'.join(lines)
+
+    def transpile(self, yul_code: str, slot_resolver=None) -> str:
         """
         Transpile a Yul assembly block to TypeScript.
 
@@ -636,6 +731,7 @@ class YulTranspiler:
         """
         self._warnings = []
         self._unmodelable = False
+        self._slot_resolver = slot_resolver
         slot_vars: Dict[str, str] = {}
 
         try:
@@ -757,7 +853,7 @@ class YulTranspiler:
         if isinstance(stmt.value, YulSlotAccess):
             storage_var = stmt.value.variable
             slot_vars[stmt.name] = storage_var
-            return f'{prefix}const {stmt.name} = this._getStorageKey({storage_var} as any);'
+            return f'{prefix}const {stmt.name} = {storage_var} as any;'
 
         ts_expr = self._generate_expression(stmt.value, slot_vars)
         return f'{prefix}let {stmt.name} = {ts_expr};'
@@ -775,7 +871,7 @@ class YulTranspiler:
         if isinstance(stmt.value, YulSlotAccess):
             storage_var = stmt.value.variable
             slot_vars[stmt.name] = storage_var
-            return f'{prefix}{stmt.name} = this._getStorageKey({storage_var} as any);'
+            return f'{prefix}{stmt.name} = {storage_var} as any;'
 
         ts_expr = self._generate_expression(stmt.value, slot_vars)
         return f'{prefix}{stmt.name} = {ts_expr};'
@@ -793,7 +889,7 @@ class YulTranspiler:
         # Yul `if` runs the body when the condition is NONZERO. Make the comparison explicit
         # instead of relying on bigint truthiness — semantically identical, and it avoids
         # tsc's TS2872 (always-truthy) diagnostic on translated boolean-ternary conditions.
-        lines = [f'{prefix}if (BigInt({cond}) !== 0n) {{']
+        lines = [f'{prefix}if ({self._bi(cond)} !== 0n) {{']
         if body and body != '// Assembly: no-op':
             lines.append(body)
         lines.append(f'{prefix}}}')
@@ -897,6 +993,11 @@ class YulTranspiler:
         if func == 'sstore' and len(call.arguments) >= 2:
             slot_expr = call.arguments[0]
             value = self._generate_expression(call.arguments[1], slot_vars)
+            target = self._slot_target(slot_expr, slot_vars)
+            if target is not None:
+                emitted = self._emit_slot_write(target, value, prefix)
+                if emitted is not None:
+                    return emitted
             if isinstance(slot_expr, YulIdentifier) and slot_expr.name in slot_vars:
                 return f'{prefix}this._storageWrite({slot_vars[slot_expr.name]} as any, {value});'
             slot = self._generate_expression(slot_expr, slot_vars)
@@ -958,7 +1059,7 @@ class YulTranspiler:
         elif isinstance(expr, YulFunctionCall):
             return self._generate_function_call(expr, slot_vars)
         elif isinstance(expr, YulSlotAccess):
-            return f'this._getStorageKey({expr.variable} as any)'
+            return f'({expr.variable} as any)'
         elif isinstance(expr, YulOffsetAccess):
             return '0n  // .offset'
         return '0n'
@@ -984,6 +1085,23 @@ class YulTranspiler:
             return f'Constants.{name}'
         return name
 
+    def _bi(self, expr: str) -> str:
+        """Wrap `expr` in BigInt() unless it is statically bigint-typed.
+
+        Provably-bigint shapes from this generator: bigint literals, the parenthesized
+        outputs of the yul op emitters, BigInt(...) conversions, and _storageRead loads.
+        Bare identifiers and Constants.* stay wrapped — a constant may be a string.
+        """
+        if _BIGINT_LITERAL_RE.fullmatch(expr) is not None:
+            return expr
+        if expr.startswith('BigInt'):
+            return expr
+        if expr.startswith('this._storageRead('):
+            return expr
+        if expr.startswith('(') and expr.endswith(')') and ' as any' not in expr:
+            return expr
+        return f'BigInt({expr})'
+
     def _generate_function_call(
         self,
         call: YulFunctionCall,
@@ -997,6 +1115,11 @@ class YulTranspiler:
         if func == 'sload':
             if args:
                 slot_expr = args[0]
+                target = self._slot_target(slot_expr, slot_vars)
+                if target is not None:
+                    emitted = self._emit_slot_read(target)
+                    if emitted is not None:
+                        return emitted
                 if isinstance(slot_expr, YulIdentifier) and slot_expr.name in slot_vars:
                     return f'this._storageRead({slot_vars[slot_expr.name]} as any)'
                 slot = self._generate_expression(slot_expr, slot_vars)
@@ -1005,50 +1128,50 @@ class YulTranspiler:
 
         # Binary: (BigInt(left) op BigInt(right))
         if func in _BINARY_OPS and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) {_BINARY_OPS[func]} BigInt({right}))'
+            left = self._bi(self._generate_expression(args[0], slot_vars))
+            right = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({left} {_BINARY_OPS[func]} {right})'
 
         # Ternary mod: ((BigInt(a) op BigInt(b)) % BigInt(m))
         if func in _TERNARY_MOD_OPS and len(args) == 3:
-            a = self._generate_expression(args[0], slot_vars)
-            b = self._generate_expression(args[1], slot_vars)
-            m = self._generate_expression(args[2], slot_vars)
-            return f'((BigInt({a}) {_TERNARY_MOD_OPS[func]} BigInt({b})) % BigInt({m}))'
+            a = self._bi(self._generate_expression(args[0], slot_vars))
+            b = self._bi(self._generate_expression(args[1], slot_vars))
+            m = self._bi(self._generate_expression(args[2], slot_vars))
+            return f'(({a} {_TERNARY_MOD_OPS[func]} {b}) % {m})'
 
         # Unary not
         if func == 'not' and len(args) >= 1:
-            operand = self._generate_expression(args[0], slot_vars)
-            return f'(~BigInt({operand}))'
+            operand = self._bi(self._generate_expression(args[0], slot_vars))
+            return f'(~{operand})'
 
         # Shift: args are (shift_amount, value)
         if func in _SHIFT_OPS and len(args) == 2:
-            shift = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({val}) {_SHIFT_OPS[func]} BigInt({shift}))'
+            shift = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({val} {_SHIFT_OPS[func]} {shift})'
 
         # byte extraction
         if func == 'byte' and len(args) == 2:
-            pos = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'((BigInt({val}) >> (BigInt(248) - BigInt({pos}) * 8n)) & 0xFFn)'
+            pos = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'(({val} >> (248n - {pos} * 8n)) & 0xFFn)'
 
         # signextend
         if func == 'signextend' and len(args) == 2:
-            b = self._generate_expression(args[0], slot_vars)
-            val = self._generate_expression(args[1], slot_vars)
-            return f'BigInt.asIntN(Number(BigInt({b}) + 1n) * 8, BigInt({val}))'
+            b = self._bi(self._generate_expression(args[0], slot_vars))
+            val = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'BigInt.asIntN(Number({b} + 1n) * 8, {val})'
 
         # Comparison: (BigInt(left) op BigInt(right) ? 1n : 0n)
         if func in _COMPARISON_OPS and len(args) == 2:
-            left = self._generate_expression(args[0], slot_vars)
-            right = self._generate_expression(args[1], slot_vars)
-            return f'(BigInt({left}) {_COMPARISON_OPS[func]} BigInt({right}) ? 1n : 0n)'
+            left = self._bi(self._generate_expression(args[0], slot_vars))
+            right = self._bi(self._generate_expression(args[1], slot_vars))
+            return f'({left} {_COMPARISON_OPS[func]} {right} ? 1n : 0n)'
 
         # iszero
         if func == 'iszero' and len(args) >= 1:
-            operand = self._generate_expression(args[0], slot_vars)
-            return f'(BigInt({operand}) === 0n ? 1n : 0n)'
+            operand = self._bi(self._generate_expression(args[0], slot_vars))
+            return f'({operand} === 0n ? 1n : 0n)'
 
         # Memory/calldata zero placeholders
         if func in _ZERO_OPS:

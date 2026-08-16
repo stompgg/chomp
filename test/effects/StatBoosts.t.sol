@@ -138,17 +138,11 @@ contract StatBoostsTest is Test, BattleHelper {
         int32 boostedStat = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName(statIndex));
         assertEq(boostedStat, initialStat + 10, "Stat should be boosted by 10%");
 
-        // Verify the effect was added to Alice's mon
-        (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);
-        bool foundEffect = false;
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
-                foundEffect = true;
-                break;
-            }
-        }
-        assertTrue(foundEffect, "Stat Boost effect should be added to mon's effects");
-        uint256 effectCount = effects.length;
+        // Verify the source landed in the mon's boost store (boost sources are no longer
+        // effect-list entries)
+        (BattleConfigView memory cfgView,) = engine.getBattle(battleKey);
+        assertEq(cfgView.p0StatBoosts[0].length, 1, "Stat Boost source should be in the boost store");
+        uint256 sourceCount = cfgView.p0StatBoosts[0].length;
 
         // 2. Apply another boost (+10) to the same stat
         console.log("2. Applying additional 1% boost to Alice's mon");
@@ -167,9 +161,9 @@ contract StatBoostsTest is Test, BattleHelper {
         int32 furtherBoostedStat = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName(statIndex));
         assertEq(furtherBoostedStat, initialStat + 21, "Stat should be boosted by 21% total");
 
-        // Verify no duplicate effect was added
-        (effects,) = engine.getEffects(battleKey, 0, 0);
-        assertEq(effects.length, effectCount, "No duplicate effect should be added");
+        // Verify no duplicate source was added (same caller merges into one source)
+        (cfgView,) = engine.getBattle(battleKey);
+        assertEq(cfgView.p0StatBoosts[0].length, sourceCount, "No duplicate source should be added");
 
         // Switch out the mon
         console.log("4. Switching out Alice's mon");
@@ -184,16 +178,9 @@ contract StatBoostsTest is Test, BattleHelper {
             0 // Bob does nothing
         );
 
-        // Verify the effect was removed
-        (effects,) = engine.getEffects(battleKey, 0, 1);
-        foundEffect = false;
-        for (uint256 i = 0; i < effects.length; i++) {
-            if (address(effects[i].effect) == STAT_BOOST_ADDRESS) {
-                foundEffect = true;
-                break;
-            }
-        }
-        assertFalse(foundEffect, "Stat Boost effect should be removed after switching out");
+        // Verify the temp source expired off the switched-out mon's boost store
+        (cfgView,) = engine.getBattle(battleKey);
+        assertEq(cfgView.p0StatBoosts[0].length, 0, "Stat Boost source should be removed after switching out");
 
         // 5. Switch back to the original mon and verify stat is reset
         _commitRevealExecuteForAliceAndBob(
@@ -310,16 +297,9 @@ contract StatBoostsTest is Test, BattleHelper {
             int32 boostedStat = engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName(statIndices[i]));
             assertEq(boostedStat, 2, "Stat should be boosted by +2");
 
-            // Verify the effect was added
-            (EffectInstance[] memory statEffects,) = engine.getEffects(battleKey, 0, 0);
-            bool foundStatEffect = false;
-            for (uint256 j = 0; j < statEffects.length; j++) {
-                if (address(statEffects[j].effect) == STAT_BOOST_ADDRESS) {
-                    foundStatEffect = true;
-                    break;
-                }
-            }
-            assertTrue(foundStatEffect, "Stat Boost effect should be added for each stat");
+            // Verify the source is in the boost store
+            (BattleConfigView memory statView,) = engine.getBattle(battleKey);
+            assertTrue(statView.p0StatBoosts[0].length > 0, "Stat Boost source should be added for each stat");
         }
 
         // Switch out and verify all effects are removed
@@ -333,14 +313,9 @@ contract StatBoostsTest is Test, BattleHelper {
             0 // Bob does nothing
         );
 
-        // Verify all effects were removed
-        (EffectInstance[] memory effectsAfterSwitch,) = engine.getEffects(battleKey, 0, 1);
-        for (uint256 i = 0; i < effectsAfterSwitch.length; i++) {
-            assertFalse(
-                address(effectsAfterSwitch[i].effect) == STAT_BOOST_ADDRESS,
-                "No Stat Boost effects should remain after switching out"
-            );
-        }
+        // Verify all temp sources expired off the switched-out mon
+        (BattleConfigView memory afterView,) = engine.getBattle(battleKey);
+        assertEq(afterView.p0StatBoosts[0].length, 0, "No Stat Boost sources should remain after switching out");
     }
 
     function test_permanentTempStatBoostInteraction() public {

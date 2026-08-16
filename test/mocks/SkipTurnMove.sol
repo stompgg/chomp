@@ -27,10 +27,6 @@ contract SkipTurnMove is IMoveSet {
         PRIORITY = args.PRIORITY;
     }
 
-    function name() external pure returns (string memory) {
-        return "Skip Turn";
-    }
-
     function move(
         IEngine engine,
         bytes32,

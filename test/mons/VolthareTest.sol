@@ -473,13 +473,20 @@ contract VolthareTest is Test, BattleHelper {
         return battleKey;
     }
 
-    // Quickstorm lands on Volthare's first acting turn: damages and Zaps the opponent.
+    // Quickstorm lands on Volthare's first acting turn: damages and Zaps the opponent. Volthare
+    // (speed 100) outspeeds Bob (50), so the Zap arrives before Bob acts and eats this turn's
+    // action — his committed attack never lands.
     function test_quickstormLandsOnFirstTurn() public {
         bytes32 battleKey = _quickstormBattle();
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, 0, 0);
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 1, 0, 0);
         assertLt(engine.getMonStateForBattle(battleKey, 1, 0, MonStateIndexName.Hp), 0, "Quickstorm should damage Bob");
+        assertEq(
+            engine.getMonStateForBattle(battleKey, 0, 0, MonStateIndexName.Hp),
+            0,
+            "Zap consumed Bob's action on the turn it landed"
+        );
         (bool bobZapped,,) = engine.getEffectData(battleKey, 1, 0, address(qsZap));
-        assertTrue(bobZapped, "Quickstorm should Zap Bob on the first turn");
+        assertFalse(bobZapped, "a same-turn Zap is spent immediately, not carried to the next turn");
     }
 
     // Once Volthare acts with anything else, its first-turn window closes and Quickstorm fizzles.

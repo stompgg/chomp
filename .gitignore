@@ -1,6 +1,8 @@
 # Compiler files
 cache/
 out/
+cache-fast/
+out-fast/
 
 # Ignores development broadcast logs
 !/broadcast
@@ -32,20 +34,10 @@ drool/*
 
 # Keep main data
 !drool/abilities.csv
-!drool/index.html
-!drool/mon-analysis.js
-!drool/mon-full.js
-!drool/mon-moves.js
-!drool/mon-stats.js
 !drool/mons.csv
 !drool/moves.csv
-!drool/style.css
 !drool/types.csv
-!drool/type-data.js
-!drool/utils.js
-!drool/combine.py
-!drool/switch-animation.py
-!drool/docs
+!drool/type-metadata.csv
 
 # Transpiler output
 ts-output/
@@ -54,7 +46,12 @@ transpiler/ts-output/
 .vscode/
 .pytest_cache/
 .venv/
-.claude/
+
+# Ignore everything in .claude except shared skills
+.claude/*
+!.claude/skills
+!.claude/skills/**
+
 node_modules/
 
 .deploys/

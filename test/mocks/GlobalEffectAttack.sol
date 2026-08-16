@@ -29,10 +29,6 @@ contract GlobalEffectAttack is IMoveSet {
         PRIORITY = args.PRIORITY;
     }
 
-    function name() external pure returns (string memory) {
-        return "Effect Attack";
-    }
-
     function move(
         IEngine engine,
         bytes32,

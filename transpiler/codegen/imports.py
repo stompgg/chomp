@@ -11,6 +11,10 @@ from typing import Dict, List, Set, TYPE_CHECKING
 if TYPE_CHECKING:
     from .context import CodeGenerationContext
 
+# Scanned names generated files import from the runtime instead of viem: wrapped viem
+# functions (memoized / fast-path, byte-identical) plus runtime-only helpers like '__ik'.
+RUNTIME_PROVIDED = frozenset({'keccak256', 'encodePacked', 'encodeAbiParameters', '__ik'})
+
 
 class ImportGenerator:
     """
@@ -47,12 +51,13 @@ class ImportGenerator:
 
         lines = []
 
-        # viem imports (only what's actually used)
+        # viem imports (only what's actually used); RUNTIME_PROVIDED names come from the runtime.
         if self._ctx.viem_imports_used:
-            viem_imports = sorted(self._ctx.viem_imports_used)
-            lines.append(
-                f"import {{ {', '.join(viem_imports)} }} from 'viem';"
-            )
+            viem_imports = sorted(self._ctx.viem_imports_used - RUNTIME_PROVIDED)
+            if viem_imports:
+                lines.append(
+                    f"import {{ {', '.join(viem_imports)} }} from 'viem';"
+                )
 
         # Runtime imports
         runtime_imports = self._build_runtime_imports()
@@ -92,6 +97,8 @@ class ImportGenerator:
             'sha256', 'sha256String', 'addressToUint', 'blockhash',
             'ecrecover', 'selfdestruct',
         ]
+
+        imports.extend(sorted(self._ctx.viem_imports_used & RUNTIME_PROVIDED))
 
         # Add set types if used
         if self._ctx.set_types_used:
@@ -141,7 +148,12 @@ class ImportGenerator:
                 continue
             import_path = self._get_relative_import_path(library)
             singleton_name = library[0].lower() + library[1:]
-            lines.append(f"import {{ {singleton_name} }} from '{import_path}';")
+            # A `static readonly` constant resolves against the class, so pull that in too.
+            if library in self._ctx.library_classes_referenced:
+                imported = f'{library}, {singleton_name}'
+            else:
+                imported = singleton_name
+            lines.append(f"import {{ {imported} }} from '{import_path}';")
         return lines
 
     def _generate_contract_type_imports(self, contract_name: str) -> List[str]:

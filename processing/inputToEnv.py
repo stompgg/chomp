@@ -31,7 +31,8 @@ def parse_content_to_env_lines(content):
     deploy_data_matches = parse_deploy_data_array(content)
     if deploy_data_matches:
         for name, address in deploy_data_matches:
-            name = name.upper().replace(" ", "_").replace("-", "_")
+            # Drop characters that are invalid in an env var name (e.g. "King's Leisure").
+            name = re.sub(r'[^A-Z0-9_]', '', name.upper().replace(" ", "_").replace("-", "_"))
             output.append(f"{name}={address}")
 
     return output

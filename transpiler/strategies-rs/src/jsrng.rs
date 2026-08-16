@@ -1,6 +1,6 @@
-//! Seeded RNG + salt — port of `sims/src/arena/rng.ts` (mulberry32,
-//! verbatim from munch). Same seed => bit-identical float stream => the
-//! same team draws, tie-breaks and per-turn salts as the TS arena.
+//! Seeded RNG + salt — mulberry32, matching munch's `makeRng`
+//! (`src/app/services/cpu/engine-view.ts`). Same seed => bit-identical
+//! float stream => the same team draws, tie-breaks and per-turn salts.
 
 /// mulberry32. Mirrors the JS coercions exactly: all state math is u32
 /// wrapping (JS `>>> 0` / `Math.imul`), the output is `u32 / 2^32` — both
@@ -22,6 +22,28 @@ impl JsRng {
         t ^= t.wrapping_add((t ^ (t >> 7)).wrapping_mul(t | 61));
         ((t ^ (t >> 14)) as f64) / 4294967296.0
     }
+}
+
+/// Independent stream ids for one game's [`derive`]d generators.
+pub const STREAM_P0: u32 = 0;
+pub const STREAM_P1: u32 = 1;
+pub const STREAM_SALT: u32 = 2;
+
+/// An independent stream for `(seed, stream)`.
+///
+/// Each seat decides from its own generator and the engine draws salts from a
+/// third, so a bot's draw count can't perturb the battle or the other seat:
+/// same seed => same salts, whoever is piloting. That is what makes two bots
+/// comparable on one seed, and it is why the mixing step matters — mulberry32
+/// seeded with `seed`, `seed+1`, `seed+2` would correlate across streams.
+pub fn derive(seed: u32, stream: u32) -> JsRng {
+    let mut x = seed ^ stream.wrapping_mul(0x9e37_79b9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    JsRng::new(x)
 }
 
 /// 26 hex nibbles -> uint104 (`randomSalt`). Each nibble is

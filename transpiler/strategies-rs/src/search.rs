@@ -19,7 +19,35 @@ use chomp_rt::B256;
 use crate::evaluator::{score_state, Weights};
 use crate::jsrng::JsRng;
 use crate::sim::{HypoMove, Sim};
-use crate::view::{apply_hypothetical_from, calculate_valid_moves, capture_view, BattleView, Mv, Seat, NO_OP_INDEX};
+use crate::view::{
+    apply_hypothetical_from, calculate_valid_moves, capture_view, mon_current_stamina, switch_flag,
+    BattleView, Mv, Seat, NO_OP_INDEX, VCPU,
+};
+
+/// Veto: drop rest while stamina-starved under a repeated revealed opponent move —
+/// cross-turn opponent-model information no single-position search can derive.
+pub const VETO_DRAIN_LOCK_REST: u32 = 1;
+
+/// Root-only search shaping: candidate vetoes + leaf settlement. Zero-valued = the
+/// shipped search, byte-identical.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SearchOpts {
+    pub vetoes: u32,
+    /// Rest-vs-rest rounds applied at each leaf before scoring, so queued/periodic
+    /// effects (Q5, burn ticks) materialize inside the eval. With a beam, settlement
+    /// runs only in the deepened phase (guidance stays at today's cost).
+    pub settle_rounds: u32,
+    /// Consecutive turns the opponent has revealed the same move (bot-tracked).
+    pub opp_streak: u32,
+    /// Sparse deepening: value every root candidate at depth-1 (the shipped cost), then
+    /// deepen only the top `beam_k` at full depth. 0 = full-width.
+    pub beam_k: usize,
+    /// Interior-node candidate cap for the deepened phase (rest always kept). 0 = full.
+    pub int_actions: usize,
+    /// Cap for the DEEPEST interior ply (remaining depth 1). 0 = use `int_actions` —
+    /// root-adjacent plies keep the wider list where pivot lines carry the value.
+    pub int_actions_deep: usize,
+}
 
 /// Hard cap on search depth (ruled 2026-07-12).
 pub const MAX_DEPTH: u32 = 3;
@@ -35,17 +63,20 @@ const SALT: u128 = 0;
 /// (a shared stream would shift every later node's picks when a branch is skipped).
 const ENUM_SEED: u32 = 0x5EED;
 
-/// Candidate actions for `seat` at `key`: all moves + all switches + rest,
-/// capped at [`MAX_ACTIONS`]. Rest is ALWAYS a candidate — banking stamina is
-/// a real line (and the opponent model needs it too: greedy/heuristic rest).
-fn candidates(sim: &mut Sim, seat: Seat, key: B256) -> Vec<Mv> {
+/// Candidate actions for `seat` at `key`: all moves + all switches + rest, capped at
+/// `cap` (0 = [`MAX_ACTIONS`]). Rest is ALWAYS kept — banking stamina is a real line
+/// (and the opponent model needs it too: greedy/heuristic rest); the cap trims
+/// trailing switches, never moves or rest.
+fn candidates(sim: &mut Sim, seat: Seat, key: B256, cap: usize) -> Vec<Mv> {
+    let cap = if cap == 0 { MAX_ACTIONS } else { cap.min(MAX_ACTIONS) };
     let mut local = JsRng::new(ENUM_SEED);
     let v = calculate_valid_moves(sim, seat, key, &mut local);
-    let mut out: Vec<Mv> = Vec::with_capacity(v.moves.len() + v.switches.len() + v.no_op.len());
+    let mut out: Vec<Mv> = Vec::with_capacity(cap);
     out.extend(v.moves.iter().copied());
     out.extend(v.switches.iter().copied());
+    out.truncate(cap.saturating_sub(v.no_op.len()).max(1));
     out.extend(v.no_op.iter().copied());
-    out.truncate(MAX_ACTIONS);
+    out.truncate(cap);
     out
 }
 
@@ -61,15 +92,15 @@ fn step(sim: &mut Sim, seat: Seat, key: B256, my: Option<Mv>, opp: Option<Mv>) -
 
 /// The two sides' action lists at `key` given the (virtual) switch flag:
 /// 0 = opp-only acts, 1 = CPU-only acts, 2 = both. A non-acting side is `[None]`.
-fn action_lists(sim: &mut Sim, seat: Seat, key: B256, flag: u8) -> (Vec<Option<Mv>>, Vec<Option<Mv>>) {
+fn action_lists(sim: &mut Sim, seat: Seat, key: B256, flag: u8, cap: usize) -> (Vec<Option<Mv>>, Vec<Option<Mv>>) {
     let my = if flag != 0 {
-        candidates(sim, seat, key).into_iter().map(Some).collect::<Vec<_>>()
+        candidates(sim, seat, key, cap).into_iter().map(Some).collect::<Vec<_>>()
     } else {
         vec![None]
     };
     let opp = if flag != 1 {
         let opp_seat = Seat { cpu: 1 - seat.cpu };
-        candidates(sim, opp_seat, key).into_iter().map(Some).collect::<Vec<_>>()
+        candidates(sim, opp_seat, key, cap).into_iter().map(Some).collect::<Vec<_>>()
     } else {
         vec![None]
     };
@@ -78,8 +109,42 @@ fn action_lists(sim: &mut Sim, seat: Seat, key: B256, flag: u8) -> (Vec<Option<M
     (my, opp)
 }
 
-/// Recursive maximin value of the position at `key`, CPU-perspective.
-fn value(sim: &mut Sim, seat: Seat, key: B256, w: &Weights, depth: u32) -> f64 {
+/// Score a leaf, optionally after `settle_rounds` rest-vs-rest turns (stops early on a
+/// forced-switch flag or terminal — the settled score's HP/KO terms then carry the payoff).
+fn leaf_score(sim: &mut Sim, seat: Seat, key: B256, w: &Weights, settle_rounds: u32) -> f64 {
+    let rest = Mv { move_index: NO_OP_INDEX, extra_data: 0 };
+    let mut at = key;
+    let mut owned: Vec<B256> = Vec::new();
+    for _ in 0..settle_rounds {
+        if switch_flag(sim, seat, at) != 2 {
+            break;
+        }
+        let child = step(sim, seat, at, Some(rest), Some(rest));
+        owned.push(child);
+        at = child;
+        let v = capture_view(sim, seat, at);
+        let cpu_dead = v.p1.len() as i64 - (v.cpu_ko & 0xff).count_ones() as i64 <= 0;
+        let opp_dead = v.p0.len() as i64 - (v.opp_ko & 0xff).count_ones() as i64 <= 0;
+        if cpu_dead || opp_dead {
+            break;
+        }
+    }
+    let score = {
+        let view = capture_view(sim, seat, at);
+        score_state(sim, seat, &view, w)
+    };
+    for f in owned.into_iter().rev() {
+        sim.dispose_fork(f);
+    }
+    score
+}
+
+/// Recursive maximin value of the position at `key`, CPU-perspective. `int_cap` bounds
+/// interior candidate lists (0 = full width).
+fn value(
+    sim: &mut Sim, seat: Seat, key: B256, w: &Weights, depth: u32, settle_rounds: u32, int_cap: usize,
+    int_cap_deep: usize,
+) -> f64 {
     let view = capture_view(sim, seat, key);
     let cpu_alive = view.p1.len() as i64 - (view.cpu_ko & 0xff).count_ones() as i64;
     let opp_alive = view.p0.len() as i64 - (view.opp_ko & 0xff).count_ones() as i64;
@@ -92,16 +157,17 @@ fn value(sim: &mut Sim, seat: Seat, key: B256, w: &Weights, depth: u32) -> f64 {
         return LOSS - depth as f64;
     }
     if depth == 0 {
-        return score_state(sim, seat, &view, w);
+        return leaf_score(sim, seat, key, w, settle_rounds);
     }
 
-    let (my, opp) = action_lists(sim, seat, key, view.switch_flag);
+    let cap = if depth >= 2 || int_cap_deep == 0 { int_cap } else { int_cap_deep };
+    let (my, opp) = action_lists(sim, seat, key, view.switch_flag, cap);
     let mut best = f64::NEG_INFINITY;
     for a in &my {
         let mut worst = f64::INFINITY;
         for o in &opp {
             let child = step(sim, seat, key, *a, *o);
-            let v = value(sim, seat, child, w, depth - 1);
+            let v = value(sim, seat, child, w, depth - 1, settle_rounds, int_cap, int_cap_deep);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -115,6 +181,24 @@ fn value(sim: &mut Sim, seat: Seat, key: B256, w: &Weights, depth: u32) -> f64 {
         }
     }
     best
+}
+
+/// Root-only candidate vetoes. Never empties the list — if every candidate would be
+/// dropped, the original list stands.
+fn apply_vetoes(sim: &mut Sim, seat: Seat, view: &BattleView, my: Vec<Option<Mv>>, opts: &SearchOpts) -> Vec<Option<Mv>> {
+    if opts.vetoes & VETO_DRAIN_LOCK_REST == 0 || opts.opp_streak < 3 {
+        return my;
+    }
+    let starved = mon_current_stamina(sim, seat, view.bk, VCPU, view.cpu_active) < 3;
+    if !starved {
+        return my;
+    }
+    let kept: Vec<Option<Mv>> = my
+        .iter()
+        .copied()
+        .filter(|m| !matches!(m, Some(m) if m.move_index == NO_OP_INDEX))
+        .collect();
+    if kept.is_empty() { my } else { kept }
 }
 
 /// A safe legal move for the fallback path (first move → switch → rest).
@@ -175,8 +259,16 @@ fn nash_mix(g: &[Vec<f64>], iters: u32) -> Vec<f64> {
 /// one decision and fall back to a legal move. Leaked forks are reclaimed when the world drops.
 #[allow(clippy::too_many_arguments)]
 pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weights, depth: u32, peek: bool, mixed: bool, rng: &mut JsRng) -> Mv {
+    decide_with(sim, seat, view, pm, w, depth, peek, mixed, rng, &SearchOpts::default())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn decide_with(
+    sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weights, depth: u32, peek: bool, mixed: bool,
+    rng: &mut JsRng, opts: &SearchOpts,
+) -> Mv {
     let saved_fc = sim.fork_counter();
-    match catch_unwind(AssertUnwindSafe(|| decide_inner(sim, seat, view, pm, w, depth, peek, mixed, rng))) {
+    match catch_unwind(AssertUnwindSafe(|| decide_inner(sim, seat, view, pm, w, depth, peek, mixed, rng, opts))) {
         Ok(mv) => mv,
         Err(_) => {
             sim.set_fork_counter(saved_fc);
@@ -186,7 +278,10 @@ pub fn decide(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weights,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn decide_inner(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weights, depth: u32, peek: bool, mixed: bool, rng: &mut JsRng) -> Mv {
+fn decide_inner(
+    sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weights, depth: u32, peek: bool, mixed: bool,
+    rng: &mut JsRng, opts: &SearchOpts,
+) -> Mv {
     let depth = depth.clamp(1, MAX_DEPTH);
     let saved_fc = sim.fork_counter();
     let key = view.bk;
@@ -197,10 +292,58 @@ fn decide_inner(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weight
         return Mv { move_index: NO_OP_INDEX, extra_data: 0 };
     }
 
-    let (my, opp_full) = action_lists(sim, seat, key, view.switch_flag);
+    let (my, opp_full) = action_lists(sim, seat, key, view.switch_flag, 0);
+    let my = apply_vetoes(sim, seat, view, my, opts);
     // Peek-at-root: the opponent's move IS revealed this turn (`pm`) → best-respond to it (a single
     // opponent action), maximin only deeper. Without peek, the full no-peek grid at the root too.
     let opp = if peek && view.switch_flag != 1 { vec![Some(pm)] } else { opp_full };
+
+    // Sparse deepening: guidance-value every root row at depth-1 (full-width interiors, no
+    // settlement — the shipped search's exact cost), then re-value only the top `beam_k`
+    // rows at full depth with lean interiors + settlement. The guidance argmax is always
+    // in the beam, and the final pick is the argmax among deepened rows only.
+    if opts.beam_k > 0 && depth >= 2 && !mixed {
+        let mut guided: Vec<(usize, f64)> = Vec::with_capacity(my.len());
+        for (i, a) in my.iter().enumerate() {
+            let mut worst = f64::INFINITY;
+            for o in &opp {
+                let child = step(sim, seat, key, *a, *o);
+                let v = value(sim, seat, child, w, depth - 2, 0, 0, 0);
+                sim.dispose_fork(child);
+                if v < worst {
+                    worst = v;
+                }
+            }
+            guided.push((i, worst));
+        }
+        guided.sort_by(|a, b| b.1.total_cmp(&a.1));
+        guided.truncate(opts.beam_k.max(1));
+
+        let mut best = my[guided[0].0].unwrap_or(Mv { move_index: NO_OP_INDEX, extra_data: 0 });
+        let mut best_val = f64::NEG_INFINITY;
+        for &(i, _) in &guided {
+            let mut worst = f64::INFINITY;
+            for o in &opp {
+                let child = step(sim, seat, key, my[i], *o);
+                let v = value(sim, seat, child, w, depth - 1, opts.settle_rounds, opts.int_actions, opts.int_actions_deep);
+                sim.dispose_fork(child);
+                if v < worst {
+                    worst = v;
+                }
+                if worst <= best_val {
+                    break; // argmax-invariant row prune
+                }
+            }
+            if worst > best_val {
+                best_val = worst;
+                if let Some(m) = my[i] {
+                    best = m;
+                }
+            }
+        }
+        sim.set_fork_counter(saved_fc);
+        return best;
+    }
 
     // Mixed play needs the FULL root grid (Nash weighs every cell) — no pruning here.
     if mixed && my.len() > 1 && opp.len() > 1 {
@@ -208,7 +351,7 @@ fn decide_inner(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weight
         for (i, a) in my.iter().enumerate() {
             for (j, o) in opp.iter().enumerate() {
                 let child = step(sim, seat, key, *a, *o);
-                grid[i][j] = value(sim, seat, child, w, depth - 1);
+                grid[i][j] = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0);
                 sim.dispose_fork(child);
             }
         }
@@ -233,7 +376,7 @@ fn decide_inner(sim: &mut Sim, seat: Seat, view: &BattleView, pm: Mv, w: &Weight
         let mut worst = f64::INFINITY;
         for o in &opp {
             let child = step(sim, seat, key, *a, *o);
-            let v = value(sim, seat, child, w, depth - 1);
+            let v = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;

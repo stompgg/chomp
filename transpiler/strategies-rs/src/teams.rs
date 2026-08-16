@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::arena::{build_team_mon, draw_team, Wrand};
 use crate::evaluator::DEFAULT_WEIGHTS;
-use crate::game::{run_games, GameSpec, StrategyKind};
+use crate::bots;
+use crate::game::{run_games, GameSpec, BotName};
 use crate::roster::{self, Roster};
 
 /// All k-subsets of 0..n (lexicographic).
@@ -51,7 +52,31 @@ impl TeamResult {
 }
 
 /// Every 4-mon team vs `games_per_team` random-field opponents (greedy both sides).
-pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_base: u32, threads: usize) -> Vec<TeamResult> {
+/// Work-in-progress reporter: (team results so far, games run, games total).
+pub type TeamProgress<'a> = &'a dyn Fn(&[TeamResult], usize, usize);
+
+fn tally(r: &mut TeamResult, o: &Result<crate::game::GameOutcome, String>) {
+    r.games += 1;
+    if let Ok(g) = o {
+        match g.winner_seat {
+            Some(1) => r.wins += 1, // p1 = the searched team
+            Some(0) => r.losses += 1,
+            _ => {}
+        }
+    }
+}
+
+/// How many slices a progress-reporting run is cut into.
+const PROGRESS_CHUNKS: usize = 20;
+
+pub fn run_team_search(
+    roster: &Roster,
+    games_per_team: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    progress: Option<TeamProgress>,
+) -> Vec<TeamResult> {
     let book = roster::address_book();
     let ids: Vec<u32> = roster.mons.iter().map(|m| m.id).collect();
     let n = ids.len();
@@ -74,8 +99,9 @@ pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_
                 p1_team: team_ids.iter().map(|&id| build_team_mon(mon(id))).collect(),
                 p0_ids: opp,
                 p1_ids: team_ids.clone(),
-                p0_strategy: StrategyKind::Greedy,
-                p1_strategy: StrategyKind::Greedy,
+                p0_strategy: bots::GREEDY,
+                p1_strategy: bots::GREEDY,
+                peek_seat: None,
                 p0_weights: DEFAULT_WEIGHTS,
                 p1_weights: DEFAULT_WEIGHTS,
                 p0_search_depth: 0,
@@ -84,27 +110,40 @@ pub fn run_team_search(roster: &Roster, games_per_team: usize, wseed: u32, seed_
                 p1_search_peek: false,
                 p0_search_mixed: false,
                 p1_search_mixed: false,
+                p0_search_opts: Default::default(),
+                p1_search_opts: Default::default(),
             });
             team_of.push(ti);
             counter = counter.wrapping_add(1);
         }
     }
 
-    let outcomes = run_games(&specs, &book, threads, false);
     let mut results: Vec<TeamResult> = teams
         .iter()
         .map(|c| TeamResult { team: c.iter().map(|&i| ids[i]).collect(), games: 0, wins: 0, losses: 0 })
         .collect();
-    for (i, o) in outcomes.iter().enumerate() {
-        let r = &mut results[team_of[i]];
-        r.games += 1;
-        if let Ok(g) = o {
-            match g.winner_seat {
-                Some(1) => r.wins += 1, // p1 = the searched team
-                Some(0) => r.losses += 1,
-                _ => {}
-            }
+
+    let Some(report) = progress else {
+        for (i, o) in run_games(&specs, &book, threads, false).iter().enumerate() {
+            tally(&mut results[team_of[i]], o);
         }
+        return results;
+    };
+
+    // Specs are team-major, so consecutive slices would cover only the first teams and make the
+    // partial main effect wildly biased. Walk a strided permutation instead: same games, same
+    // seeds, but every slice samples across the whole team space.
+    let stride = PROGRESS_CHUNKS.min(specs.len().max(1));
+    let order: Vec<usize> = (0..stride).flat_map(|off| (off..specs.len()).step_by(stride)).collect();
+    let chunk_len = order.len().div_ceil(PROGRESS_CHUNKS).max(1);
+    let mut done = 0usize;
+    for idx_chunk in order.chunks(chunk_len) {
+        let batch: Vec<GameSpec> = idx_chunk.iter().map(|&i| specs[i].clone()).collect();
+        for (j, o) in run_games(&batch, &book, threads, false).iter().enumerate() {
+            tally(&mut results[team_of[idx_chunk[j]]], o);
+        }
+        done += idx_chunk.len();
+        report(&results, done, specs.len());
     }
     results
 }

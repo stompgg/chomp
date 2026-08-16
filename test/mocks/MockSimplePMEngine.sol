@@ -51,7 +51,7 @@ contract MockSimplePMEngine {
         return playersList[battleKey];
     }
 
-    /// @notice SimplePM reads startTimestamp + turnId + p0 via the batched BattleContext.
+    /// @notice SimplePM reads startTimestamp + turnId + p0 + winnerIndex via the batched BattleContext.
     function getBattleContext(bytes32 battleKey) external view returns (BattleContext memory ctx) {
         ctx.startTimestamp = uint96(startTimestamps[battleKey]);
         ctx.turnId = uint64(turnIds[battleKey]);
@@ -60,6 +60,10 @@ contract MockSimplePMEngine {
             ctx.p0 = players[0];
             ctx.p1 = players[1];
         }
+        // Mirrors Engine: 2 = no winner, else the winner's player index. Derived from the same
+        // mapping getWinner serves, so the two can't disagree.
+        address winner = winners[battleKey];
+        ctx.winnerIndex = winner == address(0) ? 2 : (winner == ctx.p0 ? 0 : 1);
     }
 
     /// @notice SimplePM reads the buffered-turn count as `packedTurns.length`; entries are unused here.

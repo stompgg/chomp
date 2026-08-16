@@ -2,7 +2,7 @@ import { contracts as CONTRACT_REGISTRY } from '../../../transpiler/ts-output/fa
 import { Type } from '../../../transpiler/ts-output/Enums';
 import type { MonRow, MoveRow, Roster } from './csv-load';
 import type { HarnessMonConfig, MoveSlotSource } from '../harness';
-import { findInlineMoveJson, type InlineMoveJson } from './inline-pack';
+import { findInlineMoveJson, inlineParamsFromCsv } from './inline-pack';
 
 const TYPE_BY_NAME: Record<string, number> = {
   Yin: Type.Yin,
@@ -33,6 +33,7 @@ export function moveNameToContract(name: string): string {
   return name
     .split(/[\s\-]+/)
     .filter(Boolean)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join('');
 }
@@ -67,7 +68,11 @@ export function buildMonConfig(roster: Roster, mon: MonRow, defaultStamina = 5n)
     }
     const inlineJson = findInlineMoveJson(monDir, contract);
     if (inlineJson) {
-      resolvedMoves.push({ move, index: resolvedMoves.length, source: { kind: 'inline', json: inlineJson } });
+      resolvedMoves.push({
+        move,
+        index: resolvedMoves.length,
+        source: { kind: 'inline', params: inlineParamsFromCsv(move), effect: inlineJson.effect },
+      });
       continue;
     }
     missingMoves.push(move.name);

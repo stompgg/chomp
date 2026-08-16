@@ -14,12 +14,8 @@ contract Initialize is IMoveSet, BasicEffect {
     uint8 public constant ATTACK_BUFF_PERCENT = 50;
     uint8 public constant SP_ATTACK_BUFF_PERCENT = 50;
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Initialize";
-    }
-
-    function _initializeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _initializeKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
     }
 
     function move(
@@ -79,7 +75,7 @@ contract Initialize is IMoveSet, BasicEffect {
      *  Effect implementation
      */
     // Steps: OnMonSwitchIn, OnMonSwitchOut
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8030;
     }
 

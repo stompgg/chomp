@@ -24,26 +24,26 @@ contract SetupCPU is Script {
 
         uint256[] memory monIndices = new uint256[](4);
         uint8[] memory facetIds = new uint8[](4);
-        monIndices[0] = 0; // Ghouliath
-        monIndices[1] = 3; // Iblivion
-        monIndices[2] = 10; // Xmon
-        monIndices[3] = 5; // Sofabbi
+        monIndices[0] = 14; // Mulong
+        monIndices[1] = 12; // Nirvamma
+        monIndices[2] = 11; // Ekineki
+        monIndices[3] = 1; // Inutia
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 0, monIndices, facetIds);
         }
 
-        monIndices[0] = 1; // Inutia
-        monIndices[1] = 11; // Ekineki
-        monIndices[2] = 6; // Pengym
-        monIndices[3] = 7; // Embursa
+        monIndices[0] = 0; // Ghouliath
+        monIndices[1] = 5; // Sofabbi
+        monIndices[2] = 8; // Volthare
+        monIndices[3] = 9; // Aurox
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 1, monIndices, facetIds);
         }
 
         monIndices[0] = 2; // Malalien
-        monIndices[1] = 9; // Aurox
-        monIndices[2] = 4; // Gorillax
-        monIndices[3] = 8; // Volthare
+        monIndices[1] = 6; // Pengym
+        monIndices[2] = 10; // Xmon
+        monIndices[3] = 13; // Glob
         for (uint256 i; i < cpuPlayers.length; i++) {
             gachaTeamRegistry.setTeamForUser(vm.envAddress(cpuPlayers[i]), 2, monIndices, facetIds);
         }

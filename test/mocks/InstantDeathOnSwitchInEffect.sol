@@ -9,12 +9,8 @@ import {IEngine} from "../../src/IEngine.sol";
 import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 
 contract InstantDeathOnSwitchInEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "Instant Death On Switch";
-    }
-
     // Steps: OnMonSwitchIn
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x10;
     }
 

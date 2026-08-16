@@ -10,10 +10,6 @@ import {IEngine} from "../../src/IEngine.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 
 contract StatBoostsMove is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "";
-    }
-
     function move(
         IEngine engine,
         bytes32,

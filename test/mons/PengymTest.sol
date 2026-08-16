@@ -590,20 +590,20 @@ contract PengymTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Active mon for Bob should be 1
-        uint256 bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
+        uint256 bobActiveMonIndex = engine.getBattleContext(battleKey).p1ActiveMonIndex;
         assertEq(bobActiveMonIndex, 1, "Swap succeeded (0 -> 1)");
 
         // Alice selects pistol squat, Bob does nothing
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Active mon for Bob should be 0
-        bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
+        bobActiveMonIndex = engine.getBattleContext(battleKey).p1ActiveMonIndex;
         assertEq(bobActiveMonIndex, 0, "Swap succeeded (1 -> 0)");
 
         // Alice selects pistol squat, Bob does nothing (and dies)
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
-        bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
+        bobActiveMonIndex = engine.getBattleContext(battleKey).p1ActiveMonIndex;
         assertEq(bobActiveMonIndex, 0, "No swap because KO");
 
         // Bob sends in mon index 1
@@ -622,7 +622,7 @@ contract PengymTest is Test, BattleHelper {
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
 
         // Now Bob has mon index 2 (already took damage) and mon index 3
-        bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
+        bobActiveMonIndex = engine.getBattleContext(battleKey).p1ActiveMonIndex;
         assertEq(bobActiveMonIndex, 3, "Switch forced");
 
         // Bob switches back to mon index 2, Alice does nothing
@@ -639,7 +639,7 @@ contract PengymTest is Test, BattleHelper {
         engine.resetCallContext();
         // Alice tries to force a switch, but active mon should not change
         _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, NO_OP_MOVE_INDEX, uint16(0), uint16(0));
-        bobActiveMonIndex = engine.getActiveMonIndexForBattleState(battleKey)[1];
+        bobActiveMonIndex = engine.getBattleContext(battleKey).p1ActiveMonIndex;
         assertEq(bobActiveMonIndex, 3, "No mons left");
     }
 }

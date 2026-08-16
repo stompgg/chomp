@@ -82,6 +82,11 @@ class RustSymbols:
         self.structs: Dict[str, List[Tuple[str, SolType]]] = {}
         # struct name -> ordered raw TypeName list (for emission-time detail)
         self.struct_type_names: Dict[str, list] = {}
+        # struct name -> raw AST definition (slot-layout computation)
+        self.struct_defs: Dict[str, object] = {}
+        # struct name -> slot-0 SlotLayout, for structs whose raw slot is read
+        # or written by Yul.
+        self.slot_layouts: Dict[str, object] = {}
         # Keyed by (container, name): the same constant name can exist at file
         # scope AND inside contracts with different types (live example:
         # Constants.sol's uint256 SWITCH_PRIORITY vs FairCPU's uint32 one) —
@@ -211,6 +216,7 @@ class RustSymbols:
                     if existing is None or len(sig.param_types) > len(existing.param_types):
                         sym.functions[key] = sig
                         sym.function_defs[key] = func
+        sym._discover_slot_overlays(asts)
         return sym
 
     def lookup_overload(self, container: Optional[str], name: str, nargs: int):
@@ -378,12 +384,58 @@ class RustSymbols:
                     found[0] = True
             elif cls == 'FunctionCall':
                 fn = node.function
-                if type(fn).__name__ == 'Identifier':
+                fcls = type(fn).__name__
+                if fcls == 'Identifier':
                     if fn.name in getattr(self, 'noop_calls', set()):
                         return
                     sig = self.lookup_function(leaf, fn.name) or self.functions.get((None, fn.name))
                     if sig is not None and sig.needs_world:
                         found[0] = True
+                elif fcls == 'MemberAccess':
+                    # Mirrors compute_needs_world's member-call classification, but
+                    # consults final needs_world flags directly (this scan runs after
+                    # the phase-2 fixed point) instead of building call edges.
+                    base = fn.expression
+                    bcls = type(base).__name__
+                    if bcls == 'Identifier' and base.name == 'super':
+                        for b in self.linearize_bases(leaf):
+                            sig = self.functions.get((b, fn.member))
+                            if sig is not None and sig.needs_world:
+                                found[0] = True
+                                break
+                    elif bcls == 'Identifier' and (
+                        base.name in self.libraries or base.name in self.contracts
+                    ):
+                        sig = self.functions.get((base.name, fn.member))
+                        if sig is not None and sig.needs_world:
+                            found[0] = True
+                    else:
+                        # Interface-value method call: external/dispatch interfaces
+                        # always route via world; aliased dispatch inherits the
+                        # impl's neediness (a public-state-var getter through an
+                        # alias is a world field read).
+                        for iface in (self.external_interfaces
+                                      | getattr(self, 'dispatch_interfaces', set())):
+                            if (iface, fn.member) in self.functions:
+                                found[0] = True
+                                break
+                        else:
+                            for iface, alias in self.interface_aliases.items():
+                                if (iface, fn.member) in self.functions:
+                                    if fn.member in self.state_vars.get(alias, {}) \
+                                            and (alias, fn.member) not in self.functions:
+                                        found[0] = True
+                                    else:
+                                        sig = self.functions.get((alias, fn.member))
+                                        if sig is not None and sig.needs_world:
+                                            found[0] = True
+                                    break
+                            else:
+                                for cname in self.contracts:
+                                    sig = self.functions.get((cname, fn.member))
+                                    if sig is not None and sig.needs_world:
+                                        found[0] = True
+                                        break
 
         def walk(node):
             if node is None or found[0]:
@@ -613,13 +665,13 @@ class RustSymbols:
                     if sig.needs_world and getattr(p, 'storage_location', '') == 'storage':
                         if pt.kind == 'struct' and pt.name in roots:
                             entry = roots[pt.name]
-                        elif pt.kind == 'mapping':
-                            # No single key addresses a nested mapping; lower
-                            # to a SELECTOR closure that re-derives the place
-                            # from world per use (funnel: world::sel).
-                            entry = ('!selector', pt, None)
                         else:
-                            entry = ('!unsupported', pt.name if pt.name else pt.kind, UNKNOWN)
+                            # No single key addresses this place — a nested
+                            # mapping, or a struct reached through one (an
+                            # array inside a mapped struct). Lower to a
+                            # SELECTOR closure that re-derives the place from
+                            # world per use (funnel: world::sel).
+                            entry = ('!selector', pt, None)
                     lowered.append(entry)
                 while len(lowered) < len(sig.param_types):
                     lowered.append(None)
@@ -648,6 +700,18 @@ class RustSymbols:
             tns.append((member.name, member.type_name))
         self.structs[struct.name] = fields
         self.struct_type_names[struct.name] = tns
+        self.struct_defs[struct.name] = struct
+
+    def _discover_slot_overlays(self, asts) -> None:
+        """Record slot-0 layouts for structs whose raw slot is touched by Yul."""
+        from ..type_system.slots import discover_slot_layouts
+
+        self.slot_layouts = discover_slot_layouts(
+            asts.values(),
+            enum_names=set(self.enums),
+            struct_names=set(self.structs),
+            struct_defs=self.struct_defs,
+        )
 
     def _record_constant(self, var, resolver, container) -> None:
         self.constants[(container, var.name)] = ConstSig(

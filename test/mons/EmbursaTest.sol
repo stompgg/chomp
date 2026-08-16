@@ -13,6 +13,7 @@ import {DefaultCommitManager} from "../../src/commit-manager/DefaultCommitManage
 import {IEngine} from "../../src/IEngine.sol";
 import {IEffect} from "../../src/effects/IEffect.sol";
 import {IMoveSet} from "../../src/moves/IMoveSet.sol";
+import {MoveSlotLib} from "../../src/moves/MoveSlotLib.sol";
 import {ITypeCalculator} from "../../src/types/ITypeCalculator.sol";
 
 import {BattleHelper} from "../abstract/BattleHelper.sol";
@@ -138,7 +139,7 @@ contract EmbursaTest is Test, BattleHelper {
         );
 
         uint256[] memory moves = new uint256[](4);
-        moves[0] = uint256(uint160(address(heatBeacon)));
+        moves[0] = MoveSlotLib.packDeployed(address(heatBeacon), 0, MOVE_META_DYNAMIC) | MOVE_CONTEXT_STATUS_LANES;
         moves[1] = uint256(uint160(address(burnMove)));
         moves[2] = uint256(uint160(address(burnMove)));
         moves[3] = uint256(uint160(address(burnMove)));
@@ -425,11 +426,11 @@ contract EmbursaTest is Test, BattleHelper {
     }
 
     function _aliceActive(bytes32 battleKey) internal view returns (uint256) {
-        return engine.getActiveMonIndexForBattleState(battleKey)[0];
+        return engine.getBattleContext(battleKey).p0ActiveMonIndex;
     }
 
     function _bobActive(bytes32 battleKey) internal view returns (uint256) {
-        return engine.getActiveMonIndexForBattleState(battleKey)[1];
+        return engine.getBattleContext(battleKey).p1ActiveMonIndex;
     }
 
     /**
@@ -584,8 +585,9 @@ contract EmbursaTest is Test, BattleHelper {
             engine, commitManager, battleKey, SWITCH_MOVE_INDEX, SWITCH_MOVE_INDEX, uint16(0), uint16(0)
         );
 
-        // Bob uses burn attack on Alice (Bob is faster)
-        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, NO_OP_MOVE_INDEX, 0, 0, 0);
+        // Bob (faster) burns Alice. Alice attacks rather than rests so the burn survives the turn —
+        // a rest here would resolve after the burn and cleanse it on the spot.
+        _commitRevealExecuteForAliceAndBob(engine, commitManager, battleKey, 0, 0, 0, 0);
 
         // Verify Alice is burned and has SpATK boost
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, 0, 0);

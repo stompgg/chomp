@@ -145,7 +145,7 @@ contract InutiaTest is Test, BattleHelper {
         (EffectInstance[] memory aliceEffects,) = engine.getEffects(battleKey, 0, 0);
         bool hasBlessed = false;
         for (uint256 i = 0; i < aliceEffects.length; i++) {
-            if (keccak256(bytes(aliceEffects[i].effect.name())) == keccak256(bytes("Blessed"))) {
+            if (address(aliceEffects[i].effect) == address(blessedStatus)) {
                 hasBlessed = true;
             }
         }
@@ -163,7 +163,7 @@ contract InutiaTest is Test, BattleHelper {
         (EffectInstance[] memory aliceEffectsAfter,) = engine.getEffects(battleKey, 0, 0);
         bool stillBlessed = false;
         for (uint256 i = 0; i < aliceEffectsAfter.length; i++) {
-            if (keccak256(bytes(aliceEffectsAfter[i].effect.name())) == keccak256(bytes("Blessed"))) {
+            if (address(aliceEffectsAfter[i].effect) == address(blessedStatus)) {
                 stillBlessed = true;
             }
         }

@@ -33,10 +33,6 @@ contract OldVengeance is IMoveSet, BasicEffect {
         TYPE_CALCULATOR = _TYPE_CALCULATOR;
     }
 
-    function name() public pure override(IMoveSet, BasicEffect) returns (string memory) {
-        return "Old Vengeance";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,
@@ -96,7 +92,7 @@ contract OldVengeance is IMoveSet, BasicEffect {
     }
 
     // Steps: RoundEnd (0x04), OnMonSwitchOut (0x20), ALWAYS_APPLIES (0x8000)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8024;
     }
 

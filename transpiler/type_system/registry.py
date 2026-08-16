@@ -24,6 +24,8 @@ class TypeRegistry:
 
     def __init__(self):
         self.structs: Set[str] = set()
+        # struct name -> raw AST definition (storage slot-layout computation)
+        self.struct_defs: Dict[str, 'StructDefinition'] = {}
         self.enums: Set[str] = set()
         self.constants: Set[str] = set()
         # Literal numeric values of constants (e.g. MOVE_LANES_PER_MON -> 4), so codegen can
@@ -34,6 +36,10 @@ class TypeRegistry:
         self.interfaces: Set[str] = set()
         self.contracts: Set[str] = set()
         self.libraries: Set[str] = set()
+        # Per-contract constant members. Library constants emit as `static readonly`, so a
+        # qualified reference must resolve against the class, not the module singleton that
+        # library *functions* use.
+        self.contract_constants: Dict[str, Set[str]] = {}
         self.contract_methods: Dict[str, Set[str]] = {}
         self.contract_vars: Dict[str, Set[str]] = {}
         self.known_public_state_vars: Set[str] = set()
@@ -90,6 +96,7 @@ class TypeRegistry:
         # Top-level structs
         for struct in ast.structs:
             self.structs.add(struct.name)
+            self.struct_defs[struct.name] = struct
             if rel_path and rel_path != 'Structs':
                 self.struct_paths[struct.name] = rel_path
             self.struct_fields[struct.name] = {}
@@ -150,6 +157,7 @@ class TypeRegistry:
             contract_local_structs: Set[str] = set()
             for struct in contract.structs:
                 self.structs.add(struct.name)
+                self.struct_defs[struct.name] = struct
                 contract_local_structs.add(struct.name)
                 # Also record struct fields (same as top-level structs)
                 self.struct_fields[struct.name] = {}
@@ -182,10 +190,12 @@ class TypeRegistry:
 
             # State variables
             state_vars = set()
+            const_vars = set()
             for var in contract.state_variables:
                 state_vars.add(var.name)
                 if var.mutability == 'constant':
                     self.constants.add(var.name)
+                    const_vars.add(var.name)
                     self._record_constant_value(var)
                 if var.visibility == 'public' and var.mutability not in ('constant', 'immutable'):
                     self.known_public_state_vars.add(var.name)
@@ -194,10 +204,13 @@ class TypeRegistry:
                         self.known_public_mappings.add(var.name)
             if state_vars:
                 self.contract_vars[name] = state_vars
+            if const_vars:
+                self.contract_constants[name] = const_vars
 
     def merge(self, other: 'TypeRegistry') -> None:
         """Merge another registry into this one."""
         self.structs.update(other.structs)
+        self.struct_defs.update(other.struct_defs)
         self.enums.update(other.enums)
         self.constants.update(other.constants)
         self.interfaces.update(other.interfaces)
@@ -215,6 +228,12 @@ class TypeRegistry:
                 self.contract_vars[name].update(vars)
             else:
                 self.contract_vars[name] = vars.copy()
+
+        for name, consts in other.contract_constants.items():
+            if name in self.contract_constants:
+                self.contract_constants[name].update(consts)
+            else:
+                self.contract_constants[name] = consts.copy()
 
         self.known_public_state_vars.update(other.known_public_state_vars)
         self.known_public_mappings.update(other.known_public_mappings)

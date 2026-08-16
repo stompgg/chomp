@@ -14,10 +14,6 @@ import {IMoveSet} from "../../src/moves/IMoveSet.sol";
 /// @dev Forces the targeted slot to swap to a random legal replacement (the PistolSquat /
 ///      HardReset force-out shape, minus the damage).
 contract RandomForceOutMove is IMoveSet {
-    function name() external pure returns (string memory) {
-        return "Random Force Out";
-    }
-
     function move(
         IEngine engine,
         bytes32 battleKey,

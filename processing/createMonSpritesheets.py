@@ -158,9 +158,21 @@ def save_and_compress_png(sheet: Image.Image, path: Path, description: str) -> N
     run_pngout(path)
 
 
+# Packed sheets are consumed from the sibling munch checkout, which may not be present.
+MUNCH_MON_ASSETS_DIR = Path(__file__).parent.parent.parent / "munch" / "src" / "assets" / "mons" / "all"
+
+
+def save_packed_sheet(sheet: Image.Image, imgs_dir: Path, filename: str, description: str) -> None:
+    """Write a packed sheet to the imgs dir and mirror it into munch's assets."""
+    save_and_compress_png(sheet, imgs_dir / filename, description)
+    if MUNCH_MON_ASSETS_DIR.exists():
+        save_and_compress_png(sheet, MUNCH_MON_ASSETS_DIR / filename, f"Munch {description.lower()}")
+    else:
+        print(f"⚠ Munch directory not found, skipping copy: {MUNCH_MON_ASSETS_DIR}")
+
+
 def create_mini_spritesheet(
     imgs_dir: Path,
-    munch_assets_dir: Path,
     metadata: dict,
 ) -> None:
     """Pack every frame of every 32x32 *_mini.gif into one shared sheet.
@@ -198,12 +210,7 @@ def create_mini_spritesheet(
         return
 
     sheet, positions = build_spritesheet(all_frames, frame_size=MINI_FRAME_SIZE)
-    drool_mini_path = imgs_dir / "mon_mini.png"
-    save_and_compress_png(sheet, drool_mini_path, "Mini spritesheet")
-
-    if munch_assets_dir.exists():
-        munch_mini_path = munch_assets_dir / "mon_mini.png"
-        save_and_compress_png(sheet, munch_mini_path, "Munch mini spritesheet")
+    save_packed_sheet(sheet, imgs_dir, "mon_mini.png", "Mini spritesheet")
 
     for mini_key, start, count, rate in mini_entries:
         frames_list = [list(positions[start + i]) for i in range(count)]
@@ -214,7 +221,6 @@ def create_mini_spritesheet(
 
 def create_micro_spritesheet(
     imgs_dir: Path,
-    munch_assets_dir: Path,
     metadata: dict,
 ) -> None:
     """Generate 16x16 micro spritesheet from icons/*_icon.gif.
@@ -262,12 +268,7 @@ def create_micro_spritesheet(
         print(f"Extracted {len(frames)} micro frames from {icon_path.name} (rate: {frame_rate}ms)")
 
     sheet, positions = build_spritesheet(all_frames, frame_size=MICRO_FRAME_SIZE)
-    drool_micro_path = imgs_dir / "mon_micro.png"
-    save_and_compress_png(sheet, drool_micro_path, "Micro spritesheet")
-
-    if munch_assets_dir.exists():
-        munch_micro_path = munch_assets_dir / "mon_micro.png"
-        save_and_compress_png(sheet, munch_micro_path, "Munch micro spritesheet")
+    save_packed_sheet(sheet, imgs_dir, "mon_micro.png", "Micro spritesheet")
 
     for mini_key, start, count, rate in mini_entries:
         frames_list = [list(positions[start + i]) for i in range(count)]
@@ -330,31 +331,11 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
     sheet, positions = build_spritesheet(all_frames)
     output_path = Path(output_dir)
 
-    # Save to output directory
-    main_sheet_path = output_path / "mon_spritesheet.png"
-    save_and_compress_png(sheet, main_sheet_path, "Spritesheet")
+    save_packed_sheet(sheet, output_path, "mon_spritesheet.png", "Spritesheet")
 
     # Build switch spritesheet
     switch_sheet, switch_positions = build_spritesheet(all_switch_frames)
-    switch_sheet_path = output_path / "mon_switch.png"
-    save_and_compress_png(switch_sheet, switch_sheet_path, "Switch spritesheet")
-
-    # Determine munch output location (similar to drool/combine.py)
-    base_path = Path(__file__).parent
-    game_dir = base_path.parent.parent
-    munch_assets_dir = game_dir / "munch" / "src" / "assets" / "mons" / "all"
-
-    # Copy to munch if directory exists
-    if munch_assets_dir.exists():
-        print(f"\n📋 Copying to munch repository: {munch_assets_dir}")
-
-        munch_main_path = munch_assets_dir / "mon_spritesheet.png"
-        save_and_compress_png(sheet, munch_main_path, "Munch spritesheet")
-
-        munch_switch_path = munch_assets_dir / "mon_switch.png"
-        save_and_compress_png(switch_sheet, munch_switch_path, "Munch switch spritesheet")
-    else:
-        print(f"\n⚠ Munch directory not found, skipping copy: {munch_assets_dir}")
+    save_packed_sheet(switch_sheet, output_path, "mon_switch.png", "Switch spritesheet")
 
     # Finalize metadata
     for name, data in metadata.items():
@@ -375,11 +356,11 @@ def create_spritesheets(gif_files: list[str], output_dir: str):
 
     # Build 32x32 mini spritesheet (raw *_mini.gif frames) and attach top-level
     # frames / msPerFrame to each *_mini.gif entry.
-    create_mini_spritesheet(Path(output_dir), munch_assets_dir, metadata)
+    create_mini_spritesheet(Path(output_dir), metadata)
 
     # Build 16x16 micro spritesheet (downscaled icons) and attach a `micro`
     # sub-key on each *_mini.gif entry.
-    create_micro_spritesheet(Path(output_dir), munch_assets_dir, metadata)
+    create_micro_spritesheet(Path(output_dir), metadata)
 
     # Save JSON with compact coordinate arrays
     json_path = Path(output_dir) / "spritesheet.json"

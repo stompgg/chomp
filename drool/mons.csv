@@ -12,3 +12,5 @@ Id,Name,HP,Attack,Defense,SpecialAttack,SpecialDefense,Speed,Type1,Type2,Flavor
 10,Xmon,311,123,179,222,185,285,Cosmic,NA,"bGJoIHBuYSBmcnIgdmcgdmEgbGJoZSBxZXJuemY="
 11,Ekineki,299,130,180,280,175,266,Liquid,NA,"Born from a single drop of water."
 12,Nirvamma,373,202,168,140,202,177,Math,NA,"Supposedly watches the entire universe."
+13,Glob,256,180,201,115,191,151,Liquid,Faith,"A very hardy creature. Found everywhere."
+14,Mulong,388,115,188,288,138,212,Air,Lightning,"One of the Cardinal Beasts."

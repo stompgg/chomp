@@ -4,11 +4,11 @@ import { setupContainer } from '../../transpiler/ts-output/factories';
 import { Engine } from '../../transpiler/ts-output/Engine';
 import * as Structs from '../../transpiler/ts-output/Structs';
 import * as Constants from '../../transpiler/ts-output/Constants';
-import { packMove, type InlineMoveJson } from './util/inline-pack';
+import { packMove, type InlineMoveParams } from './util/inline-pack';
 
 export type MoveSlotSource =
   | { kind: 'contract'; contractName: string }
-  | { kind: 'inline'; json: InlineMoveJson };
+  | { kind: 'inline'; params: InlineMoveParams; effect: string | null };
 
 const HARNESS_MOVE_MANAGER = '0x000000000000000000000000000000000000beef';
 const HARNESS_TEAM_REGISTRY_ADDR = '0x000000000000000000000000000000000000a55e';
@@ -139,7 +139,7 @@ export function buildMon(ctx: SimContext, m: HarnessMonConfig): Structs.Mon {
       const c = ctx.container.resolve<any>(src.contractName);
       return addressToUint(c._contractAddress);
     }
-    return packMove(src.json, resolveEffectAddress(ctx, src.json.effect));
+    return packMove(src.params, resolveEffectAddress(ctx, src.effect));
   });
   let ability = 0n;
   if (m.ability) {

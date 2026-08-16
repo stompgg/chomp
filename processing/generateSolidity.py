@@ -7,7 +7,7 @@ import re
 import argparse
 from typing import Dict, List, Tuple, Optional
 
-from packMoves import pack_move, detect_inline_ability
+from packMoves import pack_move, detect_inline_ability, inline_params_from_csv
 
 
 class MonData:
@@ -28,6 +28,7 @@ class MonData:
         self.type2 = type2
         self.moves: List[str] = []
         self.move_unlock_levels: Dict[str, int] = {}  # move name -> unlock level (lane gating)
+        self.move_rows: Dict[str, dict] = {}  # move name -> moves.csv row (inline packing source)
         self.abilities: List[str] = []
         self.sprite_data: List[int] = []  # uint256 values for compressed sprite data
         self.palette_data: List[int] = []  # uint256 values for compressed palette data
@@ -98,6 +99,7 @@ def read_moves_csv(file_path: str, mons: Dict[str, MonData]) -> None:
             if move_name and mon_name and mon_name in mons:
                 mons[mon_name].moves.append(move_name)
                 mons[mon_name].move_unlock_levels[move_name] = int((row.get('UnlockLevel') or '0').strip() or '0')
+                mons[mon_name].move_rows[move_name] = row
 
     # Stable-sort each mon's moves by unlock level so lanes line up with the on-chain curve.
     for mon in mons.values():
@@ -277,18 +279,20 @@ def is_json_move(mon_name: str, move_name: str, base_path: str) -> bool:
     return os.path.exists(json_path)
 
 
-def load_json_move(mon_name: str, move_name: str, base_path: str) -> Optional[dict]:
-    """Load a JSON move definition if it exists."""
+def json_move_effect(mon_name: str, move_name: str, base_path: str) -> Optional[str]:
+    """Effect contract name an inline move applies, or None. Only meaningful for JSON moves."""
     mon_dir = get_mon_directory_name(mon_name)
     contract_name = contract_name_from_move_or_ability(move_name)
     json_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.json")
     if os.path.exists(json_path):
         with open(json_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return json.load(f).get("effect")
     return None
 
 
 MOVE_META_TAG = 1 << 160
+MOVE_CONTEXT_STATUS_LANES = 1 << 161
+MOVE_RESOLVER_TAG = 1 << 162
 MOVE_META_DYNAMIC = 0xF
 DEFAULT_PRIORITY = 3
 
@@ -326,16 +330,21 @@ def deployed_move_meta(mon_name: str, move_name: str, base_path: str) -> int:
     contract_name = contract_name_from_move_or_ability(move_name)
     sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
     stamina_val = priority_val = None
+    context_bits = 0
     if os.path.exists(sol_path):
         with open(sol_path, "r", encoding="utf-8") as f:
             content = f.read()
+        if re.search(r"@move-context:\s*status-lanes\b", content):
+            context_bits |= MOVE_CONTEXT_STATUS_LANES
+        if re.search(r"@move-resolver\b", content):
+            context_bits |= MOVE_RESOLVER_TAG
         stamina_val = _extract_static_int(content, "stamina", "STAMINA_COST")
         priority_val = _extract_static_int(content, "priority", "PRIORITY")
     if stamina_val is None or not 0 <= stamina_val < MOVE_META_DYNAMIC:
         stamina_val = MOVE_META_DYNAMIC
     if priority_val is None or not 0 <= priority_val < MOVE_META_DYNAMIC:
         priority_val = MOVE_META_DYNAMIC
-    return MOVE_META_TAG | (stamina_val << 236) | (priority_val << 244)
+    return MOVE_META_TAG | context_bits | (stamina_val << 236) | (priority_val << 244)
 
 
 def effect_name_to_env_var(effect_name: str) -> str:
@@ -413,6 +422,7 @@ def collect_env_addresses_for_mon(mon_contracts: Dict[str, ContractInfo], intra_
 def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color: bool = False) -> List[str]:
     """Generate the deploy function for a specific mon"""
     function_name = f"deploy{mon.name.replace(' ', '')}"
+    helper_name = f"_register{mon.name.replace(' ', '')}"
     lines = []
 
     lines.append(f"    function {function_name}(GachaTeamRegistry registry) internal returns (DeployData[] memory) {{")
@@ -493,243 +503,205 @@ def generate_deploy_function_for_mon(mon: MonData, base_path: str, include_color
 
         # Call helper function to register the mon (reduces stack pressure)
         lines.append("")
-        helper_name = f"_register{mon.name.replace(' ', '')}"
         lines.append(f"        {helper_name}(registry, addrs);")
+    else:
+        lines.append("")
+        lines.append(f"        {helper_name}(registry);")
 
     lines.append("")
     lines.append("        return deployedContracts;")
     lines.append("    }")
     lines.append("")
 
-    # Generate the helper function for registering the mon
+    # Generate the helper function for registering the mon. A mon whose moves are all
+    # inline JSON deploys no contracts but still needs its createMon call.
     if mon_contracts:
         deployment_order, intra_dependencies = analyze_intra_mon_dependencies(mon_contracts)
         deployed_indices = {name: idx for idx, name in enumerate(deployment_order)}
+        addrs_param = f", address[{num_contracts}] memory addrs"
+    else:
+        deployed_indices = {}
+        addrs_param = ""
 
-        helper_name = f"_register{mon.name.replace(' ', '')}"
-        lines.append(f"    function {helper_name}(GachaTeamRegistry registry, address[{num_contracts}] memory addrs) internal {{")
+    lines.append(f"    function {helper_name}(GachaTeamRegistry registry{addrs_param}) internal {{")
 
-        # Generate MonStats
-        type1 = convert_type_to_solidity(mon.type1)
-        type2 = convert_type_to_solidity(mon.type2)
-        lines.extend([
-            "        MonStats memory stats = MonStats({",
-            f"            hp: {mon.hp},",
-            f"            stamina: {mon.stamina},",
-            f"            speed: {mon.speed},",
-            f"            attack: {mon.attack},",
-            f"            defense: {mon.defense},",
-            f"            specialAttack: {mon.special_attack},",
-            f"            specialDefense: {mon.special_defense},",
-            f"            type1: {type1},",
-            f"            type2: {type2}",
-            "        });"
-        ])
+    # Generate MonStats
+    type1 = convert_type_to_solidity(mon.type1)
+    type2 = convert_type_to_solidity(mon.type2)
+    lines.extend([
+        "        MonStats memory stats = MonStats({",
+        f"            hp: {mon.hp},",
+        f"            stamina: {mon.stamina},",
+        f"            speed: {mon.speed},",
+        f"            attack: {mon.attack},",
+        f"            defense: {mon.defense},",
+        f"            specialAttack: {mon.special_attack},",
+        f"            specialDefense: {mon.special_defense},",
+        f"            type1: {type1},",
+        f"            type2: {type2}",
+        "        });"
+    ])
 
-        # Generate moves array using addrs indices or packed inline values
-        if mon.moves:
-            lines.append(f"        uint256[] memory moves = new uint256[]({len(mon.moves)});")
-            for i, move_name in enumerate(mon.moves):
-                json_data = load_json_move(mon.name, move_name, base_path)
-                if json_data is not None:
-                    # Inline move: pack params into uint256
-                    packed = pack_move(json_data, effect_address=0)
-                    effect_name = json_data.get("effect")
-                    if effect_name:
-                        # Effect address is resolved at deploy time via env var
-                        env_var = effect_name_to_env_var(effect_name)
-                        lines.append(f"        moves[{i}] = 0x{packed:064x} | uint256(uint160(vm.envAddress(\"{env_var}\")));")
-                    else:
-                        lines.append(f"        moves[{i}] = 0x{packed:064x};")
+    # Generate moves array using addrs indices or packed inline values
+    if mon.moves:
+        lines.append(f"        uint256[] memory moves = new uint256[]({len(mon.moves)});")
+        for i, move_name in enumerate(mon.moves):
+            if is_json_move(mon.name, move_name, base_path):
+                # Inline move: pack the CSV row's params into uint256
+                packed = pack_move(inline_params_from_csv(mon.move_rows[move_name]), effect_address=0)
+                effect_name = json_move_effect(mon.name, move_name, base_path)
+                if effect_name:
+                    # Effect address is resolved at deploy time via env var
+                    env_var = effect_name_to_env_var(effect_name)
+                    lines.append(f"        moves[{i}] = 0x{packed:064x} | uint256(uint160(vm.envAddress(\"{env_var}\")));")
                 else:
-                    # External move contract: deployed address + packed static metadata
-                    # (stamina/priority; 0xF nibble = state-dependent, engine calls live).
-                    contract_name = contract_name_from_move_or_ability(move_name)
-                    if contract_name in deployed_indices:
-                        idx = deployed_indices[contract_name]
-                        meta = deployed_move_meta(mon.name, move_name, base_path)
-                        lines.append(f"        moves[{i}] = 0x{meta:064x} | uint256(uint160(addrs[{idx}]));")
-        else:
-            lines.append("        uint256[] memory moves = new uint256[](0);")
-
-        # Generate abilities array using addrs indices (packed for inline abilities)
-        if mon.abilities:
-            lines.append(f"        uint256[] memory abilities = new uint256[]({len(mon.abilities)});")
-            for i, ability_name in enumerate(mon.abilities):
-                contract_name = contract_name_from_move_or_ability(ability_name)
+                    lines.append(f"        moves[{i}] = 0x{packed:064x};")
+            else:
+                # External move contract: deployed address + packed static metadata
+                # (stamina/priority; 0xF nibble = state-dependent, engine calls live).
+                contract_name = contract_name_from_move_or_ability(move_name)
                 if contract_name in deployed_indices:
                     idx = deployed_indices[contract_name]
-                    # Check if this ability has @inline-ability magic comment
-                    mon_dir = get_mon_directory_name(mon.name)
-                    sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
-                    ability_type_id = detect_inline_ability(sol_path)
-                    if ability_type_id is not None:
-                        # Pack: (typeId << 248) | address
-                        lines.append(f"        abilities[{i}] = (uint256({ability_type_id}) << 248) | uint256(uint160(addrs[{idx}]));")
-                    else:
-                        # External: store raw address as uint256
-                        lines.append(f"        abilities[{i}] = uint256(uint160(addrs[{idx}]));")
+                    meta = deployed_move_meta(mon.name, move_name, base_path)
+                    lines.append(f"        moves[{i}] = 0x{meta:064x} | uint256(uint160(addrs[{idx}]));")
+    else:
+        lines.append("        uint256[] memory moves = new uint256[](0);")
+
+    # Generate abilities array using addrs indices (packed for inline abilities)
+    if mon.abilities:
+        lines.append(f"        uint256[] memory abilities = new uint256[]({len(mon.abilities)});")
+        for i, ability_name in enumerate(mon.abilities):
+            contract_name = contract_name_from_move_or_ability(ability_name)
+            if contract_name in deployed_indices:
+                idx = deployed_indices[contract_name]
+                # Check if this ability has @inline-ability magic comment
+                mon_dir = get_mon_directory_name(mon.name)
+                sol_path = os.path.join(base_path, "src", "mons", mon_dir, f"{contract_name}.sol")
+                ability_type_id = detect_inline_ability(sol_path)
+                if ability_type_id is not None:
+                    # Pack: (typeId << 248) | address
+                    lines.append(f"        abilities[{i}] = (uint256({ability_type_id}) << 248) | uint256(uint160(addrs[{idx}]));")
+                else:
+                    # External: store raw address as uint256
+                    lines.append(f"        abilities[{i}] = uint256(uint160(addrs[{idx}]));")
+    else:
+        lines.append("        uint256[] memory abilities = new uint256[](0);")
+
+    # Generate metadata arrays with sprite and palette data (if color flag is enabled)
+    if include_color:
+        total_metadata_count = len(mon.sprite_data) + len(mon.palette_data)
+
+        if total_metadata_count > 0:
+            lines.extend([
+                f"        bytes32[] memory keys = new bytes32[]({total_metadata_count});",
+                f"        bytes32[] memory values = new bytes32[]({total_metadata_count});"
+            ])
+
+            metadata_index = 0
+
+            # Add sprite data as IMG_0, IMG_1, IMG_2, etc.
+            for i, uint256_value in enumerate(mon.sprite_data):
+                lines.append(f"        keys[{metadata_index}] = bytes32(\"IMG_{i}\");")
+                lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
+                metadata_index += 1
+
+            # Add palette data as PAL_0, PAL_1, PAL_2, etc.
+            for i, uint256_value in enumerate(mon.palette_data):
+                lines.append(f"        keys[{metadata_index}] = bytes32(\"PAL_{i}\");")
+                lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
+                metadata_index += 1
         else:
-            lines.append("        uint256[] memory abilities = new uint256[](0);")
-
-        # Generate metadata arrays with sprite and palette data (if color flag is enabled)
-        if include_color:
-            total_metadata_count = len(mon.sprite_data) + len(mon.palette_data)
-
-            if total_metadata_count > 0:
-                lines.extend([
-                    f"        bytes32[] memory keys = new bytes32[]({total_metadata_count});",
-                    f"        bytes32[] memory values = new bytes32[]({total_metadata_count});"
-                ])
-
-                metadata_index = 0
-
-                # Add sprite data as IMG_0, IMG_1, IMG_2, etc.
-                for i, uint256_value in enumerate(mon.sprite_data):
-                    lines.append(f"        keys[{metadata_index}] = bytes32(\"IMG_{i}\");")
-                    lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
-                    metadata_index += 1
-
-                # Add palette data as PAL_0, PAL_1, PAL_2, etc.
-                for i, uint256_value in enumerate(mon.palette_data):
-                    lines.append(f"        keys[{metadata_index}] = bytes32(\"PAL_{i}\");")
-                    lines.append(f"        values[{metadata_index}] = bytes32(uint256({uint256_value}));")
-                    metadata_index += 1
-            else:
-                lines.extend([
-                    "        bytes32[] memory keys = new bytes32[](0);",
-                    "        bytes32[] memory values = new bytes32[](0);"
-                ])
-        else:
-            # No color data - empty metadata arrays
             lines.extend([
                 "        bytes32[] memory keys = new bytes32[](0);",
                 "        bytes32[] memory values = new bytes32[](0);"
             ])
+    else:
+        # No color data - empty metadata arrays
+        lines.extend([
+            "        bytes32[] memory keys = new bytes32[](0);",
+            "        bytes32[] memory values = new bytes32[](0);"
+        ])
 
-        # Generate createMon call
-        lines.append(f"        registry.createMon({mon.mon_id}, stats, moves, abilities, keys, values);")
-        lines.append("    }")
-        lines.append("")
+    # Generate createMon call
+    lines.append(f"        registry.createMon({mon.mon_id}, stats, moves, abilities, keys, values);")
+    lines.append("    }")
 
     return lines
 
 
-def generate_solidity_script(mons: Dict[str, MonData], contracts: Dict[str, ContractInfo], base_path: str, include_color: bool = False) -> str:
-    """Generate the complete Solidity deployment script"""
+def mon_contract_name(mon: MonData) -> str:
+    """Solidity-safe mon name (spaces dropped)."""
+    return mon.name.replace(" ", "")
 
-    # Generate imports
-    imports = [
+
+def mon_script_rel_path(mon: MonData) -> str:
+    """Repo-relative path of a mon's generated deploy script."""
+    return f"script/mons/Setup{mon_contract_name(mon)}.s.sol"
+
+
+def mon_script_targets(base_path: str = ".") -> List[str]:
+    """forge `path:contract` targets for every mon, in mon-id order.
+
+    createMon rejects non-sequential ids, so id order is deploy order. The contract is named
+    explicitly because each file also holds the abstract deploy base the gas tests inherit.
+    """
+    mons = read_mons_csv(os.path.join(base_path, "drool", "mons.csv"))
+    return [
+        f"{mon_script_rel_path(mon)}:Setup{mon_contract_name(mon)}"
+        for mon in sorted(mons.values(), key=lambda m: m.mon_id)
+    ]
+
+
+def generate_mon_script(mon: MonData, base_path: str, include_color: bool = False) -> str:
+    """Generate one mon's standalone deploy script.
+
+    The recipe sits in an abstract base so tests can inherit several mons at once; only the
+    concrete Setup<Mon> carries run() and the broadcast.
+    """
+    name = mon_contract_name(mon)
+    mon_contracts = get_contracts_for_mon(mon, base_path)
+    mon_dir = get_mon_directory_name(mon.name)
+
+    lines = [
         "// SPDX-License-Identifier: AGPL-3.0",
-        "// Created by mon_stats_to_sol.py",
+        "// AUTO-GENERATED by processing/generateSolidity.py. Do not edit by hand.",
         "pragma solidity ^0.8.0;",
         "",
         "import {Script} from \"forge-std/Script.sol\";",
-        "import {GachaTeamRegistry} from \"../src/game-layer/GachaTeamRegistry.sol\";",
-        "import {MonStats} from \"../src/Structs.sol\";",
-        "import {Type} from \"../src/Enums.sol\";",
-        ""
+        "import {DeployData} from \"../DeployData.sol\";",
+        "import {Type} from \"../../src/Enums.sol\";",
+        "import {MonStats} from \"../../src/Structs.sol\";",
+        "import {GachaTeamRegistry} from \"../../src/game-layer/GachaTeamRegistry.sol\";",
     ]
 
-    # Collect all import paths and deduplicate
-    all_import_paths = set()
+    # This mon's move/ability contracts, plus the contract types their constructors take.
+    import_paths = set()
+    for contract in mon_contracts.values():
+        contract_name = contract_name_from_move_or_ability(contract.name)
+        import_paths.add((contract_name, f"../../src/mons/{mon_dir}/{contract_name}.sol"))
+        for dep_path in contract.import_paths:
+            rel_path = os.path.relpath(dep_path, base_path).replace("\\", "/")
+            dep_contract_name = os.path.splitext(os.path.basename(dep_path))[0]
+            import_paths.add((dep_contract_name, f"../../{rel_path}"))
 
-    # Add contract imports for main contracts (moves/abilities)
-    for contract in contracts.values():
-        mon_dir = None
-        for mon in mons.values():
-            if contract.name in mon.moves or contract.name in mon.abilities:
-                mon_dir = get_mon_directory_name(mon.name)
-                break
+    for contract_name, import_path in sorted(import_paths, key=lambda x: x[1]):
+        lines.append(f"import {{{contract_name}}} from \"{import_path}\";")
 
-        if mon_dir:
-            contract_name = contract_name_from_move_or_ability(contract.name)
-            import_path = f"../src/mons/{mon_dir}/{contract_name}.sol"
-            all_import_paths.add((contract_name, import_path))
+    lines.append("")
+    lines.append(f"abstract contract {name}Deploy is Script {{")
+    lines.extend(generate_deploy_function_for_mon(mon, base_path, include_color))
+    lines.append("}")
+    lines.append("")
+    lines.append(f"contract Setup{name} is {name}Deploy {{")
+    lines.append("    function run() external returns (DeployData[] memory deployedContracts) {")
+    lines.append("        vm.startBroadcast();")
+    lines.append(f"        deployedContracts = deploy{name}(GachaTeamRegistry(vm.envAddress(\"GACHA_TEAM_REGISTRY\")));")
+    lines.append("        vm.stopBroadcast();")
+    lines.append("    }")
+    lines.append("}")
+    lines.append("")
 
-            # Add imports for dependencies of this contract
-            for dep_path in contract.import_paths:
-                # Convert absolute path to relative import path
-                rel_path = os.path.relpath(dep_path, base_path)
-                rel_path = "../" + rel_path.replace("\\", "/")  # Convert to relative and use forward slashes
-
-                # Extract contract name from file path
-                dep_contract_name = os.path.splitext(os.path.basename(dep_path))[0]
-                all_import_paths.add((dep_contract_name, rel_path))
-
-    # Sort imports for consistent output
-    sorted_imports = sorted(all_import_paths, key=lambda x: x[1])
-    for contract_name, import_path in sorted_imports:
-        imports.append(f"import {{{contract_name}}} from \"{import_path}\";")
-
-    imports.append("")
-
-    # Generate contract header and main run function
-    contract_lines = [
-        "struct DeployData {",
-        "    string name;",
-        "    address contractAddress;",
-        "}",
-        "contract SetupMons is Script {",
-        "    function run() external returns (DeployData[] memory deployedContracts) {",
-        "        vm.startBroadcast();",
-        "",
-        "        // Get the GachaTeamRegistry address",
-        "        GachaTeamRegistry registry = GachaTeamRegistry(vm.envAddress(\"GACHA_TEAM_REGISTRY\"));",
-        ""
-    ]
-
-    # Add calls to individual deploy functions and collect deployment data
-    sorted_mons = sorted(mons.values(), key=lambda m: m.mon_id)
-    num_mons = len(sorted_mons)
-
-    contract_lines.extend([
-        "        // Deploy all mons and collect deployment data",
-        f"        DeployData[][] memory allDeployData = new DeployData[][]({num_mons});",
-        ""
-    ])
-
-    # Generate calls to collect deployment data from each function
-    for i, mon in enumerate(sorted_mons):
-        function_name = f"deploy{mon.name.replace(' ', '')}"
-        contract_lines.append(f"        allDeployData[{i}] = {function_name}(registry);")
-
-    contract_lines.extend([
-        "",
-        "        // Calculate total length for flattened array",
-        "        uint256 totalLength = 0;",
-        "        for (uint256 i = 0; i < allDeployData.length; i++) {",
-        "            totalLength += allDeployData[i].length;",
-        "        }",
-        "",
-        "        // Create flattened array and copy all entries",
-        "        deployedContracts = new DeployData[](totalLength);",
-        "        uint256 currentIndex = 0;",
-        "",
-        "        // Copy all deployment data using nested loops",
-        "        for (uint256 i = 0; i < allDeployData.length; i++) {",
-        "            for (uint256 j = 0; j < allDeployData[i].length; j++) {",
-        "                deployedContracts[currentIndex] = allDeployData[i][j];",
-        "                currentIndex++;",
-        "            }",
-        "        }",
-        "",
-        "        vm.stopBroadcast();",
-        "    }",
-        ""
-    ])
-
-    # Generate individual deploy functions for each mon
-    deploy_functions = []
-    for mon in sorted(mons.values(), key=lambda m: m.mon_id):
-        deploy_functions.extend(generate_deploy_function_for_mon(mon, base_path, include_color))
-
-    # Generate contract footer
-    contract_footer = ["}"]
-
-    # Combine all parts
-    all_lines = imports + contract_lines + deploy_functions + contract_footer
-    return "\n".join(all_lines)
+    return "\n".join(lines)
 
 
 def run(include_color: bool = False, base_path: str = ".") -> bool:
@@ -751,20 +723,30 @@ def run(include_color: bool = False, base_path: str = ".") -> bool:
         contracts = collect_all_contracts(mons, base_path)
         print(f"Found {len(contracts)} unique contracts to deploy")
 
-        # Generate Solidity script
-        solidity_code = generate_solidity_script(mons, contracts, base_path, include_color)
+        # Generate one deploy script per mon
+        script_dir = os.path.join(base_path, "script", "mons")
+        os.makedirs(script_dir, exist_ok=True)
 
-        # Write to output file
-        output_path = os.path.join(base_path, "script", "SetupMons.s.sol")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        written = set()
+        for mon in sorted(mons.values(), key=lambda m: m.mon_id):
+            output_path = os.path.join(base_path, mon_script_rel_path(mon))
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(generate_mon_script(mon, base_path, include_color))
+            written.add(os.path.basename(output_path))
 
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(solidity_code)
+        print(f"Generated {len(written)} deployment scripts in {script_dir}")
 
-        print(f"Generated deployment script: {output_path}")
+        # Drop scripts for renamed/removed mons, plus the pre-split monolith.
+        for stale in sorted(f for f in os.listdir(script_dir) if f.endswith(".s.sol") and f not in written):
+            os.remove(os.path.join(script_dir, stale))
+            print(f"Removed stale script/mons/{stale}")
+        legacy_path = os.path.join(base_path, "script", "SetupMons.s.sol")
+        if os.path.exists(legacy_path):
+            os.remove(legacy_path)
+            print("Removed legacy script/SetupMons.s.sol")
 
         if include_color:
-            print("Color data included in deployment script")
+            print("Color data included in deployment scripts")
         else:
             print("Color data not included (use --color flag to include)")
 

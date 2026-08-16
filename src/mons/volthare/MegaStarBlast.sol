@@ -29,10 +29,6 @@ contract MegaStarBlast is IMoveSet {
         OVERCLOCK = _OVERCLOCK;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Mega Star Blast";
-    }
-
     function _checkForOverclock(IEngine engine, bytes32 battleKey, uint256 attackerPlayerIndex)
         internal
         view

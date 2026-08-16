@@ -11,12 +11,8 @@ import {BasicEffect} from "../../src/effects/BasicEffect.sol";
 /// @notice Effect whose shouldApply() returns false, but has ALWAYS_APPLIES_BIT set.
 /// Used to test that the Engine bypasses shouldApply() when the bit is set.
 contract AlwaysRejectsEffect is BasicEffect {
-    function name() external pure override returns (string memory) {
-        return "AlwaysRejects";
-    }
-
     // ALWAYS_APPLIES_BIT (0x8000) | RoundEnd (0x04)
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8004;
     }
 

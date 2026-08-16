@@ -8,9 +8,6 @@ import {MoveMeta} from "../Structs.sol";
 import {IMoveSet} from "./IMoveSet.sol";
 
 /// @notice Abstracts reading move properties from a raw uint256 move slot.
-/// Three forms: MOVE_META_TAG set = a deployed IMoveSet address with packed static
-/// stamina/priority (0xF nibble = dynamic, staticcall live); untagged with upper bits set =
-/// packed inline data; bare address = deployed move without metadata.
 library MoveSlotLib {
     function isInline(uint256 raw) internal pure returns (bool) {
         return raw & MOVE_META_TAG == 0 && raw >> 160 != 0;
@@ -36,9 +33,8 @@ library MoveSlotLib {
         if (isInline(raw)) {
             return uint32((raw >> 248) & 0xFF);
         }
-        // External: try IAttackMove.basePower — not all external moves expose this
-        // Callers should handle the external case themselves if they need try/catch
-        revert("MoveSlotLib: use try/catch for external basePower");
+        // External slots carry no packed power — read it from decodeMeta's getMeta instead.
+        revert("MoveSlotLib: use decodeMeta for external basePower");
     }
 
     function moveClass(uint256 raw, IEngine engine, bytes32 battleKey) internal view returns (MoveClass) {
@@ -95,10 +91,9 @@ library MoveSlotLib {
     ///         come from bit-unpacking the slot itself — pure memory ops. For external slots,
     ///         it's a single IMoveSet.getMeta staticcall instead of the 5-call fan-out
     ///         (moveType / moveClass / priority / stamina).
-    /// @dev `basePower` is 0 for non-attack slots — callers that care should still try the
-    ///      IAttackMove(addr).basePower(battleKey) shim for legacy custom attacks that haven't
-    ///      adopted MoveMeta. For inline slots and StandardAttack-based moves, basePower is
-    ///      authoritative here.
+    /// @dev `basePower` is 0 for non-attack slots, and deferred-damage moves (Q5, King's Respite)
+    ///      report 0 because they deal nothing on the turn they're cast — 0 means "no damage now",
+    ///      not "unknown"
     function decodeMeta(uint256 raw, IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
         internal
         view

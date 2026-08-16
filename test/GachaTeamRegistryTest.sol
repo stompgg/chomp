@@ -100,6 +100,10 @@ contract GachaTeamRegistryTest is Test {
         // Use single-shot prank so setUp leaves no lingering prank state — tests opt in.
         vm.prank(ALICE);
         gachaTeamRegistry.firstRoll(0);
+        // firstRoll now seeds a starter team at slot 0; delete it so slot allocation in the
+        // tests below (which assume no team exists yet) is unaffected.
+        vm.prank(ALICE);
+        gachaTeamRegistry.deleteTeam(0);
 
         // Mon id 1 is a starter Alice didn't pick → unowned. Mon id 2 is also unowned.
         unownedMonId = 1;

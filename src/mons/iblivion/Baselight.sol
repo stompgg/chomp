@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.0;
 
-import {MonStateIndexName} from "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 import {IAbility} from "../../abilities/IAbility.sol";
 import {BasicEffect} from "../../effects/BasicEffect.sol";
 import {IEffect} from "../../effects/IEffect.sol";
+import {TargetLib} from "../../lib/TargetLib.sol";
 
 /**
  * Baselight Ability for Iblivion
@@ -17,10 +17,6 @@ import {IEffect} from "../../effects/IEffect.sol";
 contract Baselight is IAbility, BasicEffect {
     uint256 public constant MAX_BASELIGHT_LEVEL = 3;
     uint256 public constant INITIAL_BASELIGHT_LEVEL = 1;
-
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Baselight";
-    }
 
     /// @dev Finds the Baselight effect on a mon and returns its state
     /// @return exists Whether the effect exists on this mon
@@ -85,23 +81,23 @@ contract Baselight is IAbility, BasicEffect {
     }
 
     // Steps: AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
-        return 0x8040;
+    function getStepsBitmap() external pure override returns (uint32) {
+        return 0x00408040; // AfterDamage context | ALWAYS_APPLIES | AfterDamage
     }
 
     // Gain 1 Baselight per damage event (capped), but never from a lethal hit.
     function onAfterDamage(
-        IEngine engine,
-        bytes32 battleKey,
+        IEngine,
+        bytes32,
         uint256,
         bytes32 extraData,
         uint256 targetIndex,
         uint256 monIndex,
-        uint256,
+        uint256 context,
         int32,
         uint256
-    ) external view override returns (bytes32 updatedExtraData, bool removeAfterRun) {
-        if (engine.getMonStateForBattle(battleKey, targetIndex, monIndex, MonStateIndexName.IsKnockedOut) != 0) {
+    ) external pure override returns (bytes32 updatedExtraData, bool removeAfterRun) {
+        if (TargetLib.hookMonIsKnockedOut(context)) {
             return (extraData, false);
         }
         uint256 currentLevel = uint256(extraData);

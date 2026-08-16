@@ -17,10 +17,6 @@ contract Angery is IAbility, BasicEffect {
     int32 public constant MAX_HP_DENOM = 6; // Heal for 1/6 of HP
 
     // IAbility implementation
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Angery";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
@@ -34,7 +30,7 @@ contract Angery is IAbility, BasicEffect {
 
     // IEffect implementation
     // Steps: RoundEnd, AfterDamage
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x8044;
     }
 

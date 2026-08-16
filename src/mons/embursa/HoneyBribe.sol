@@ -16,12 +16,8 @@ contract HoneyBribe is IMoveSet {
     uint256 public constant MAX_DIVISOR = 3;
     uint8 public constant SP_DEF_PERCENT = 50;
 
-    function name() public pure override returns (string memory) {
-        return "Honey Bribe";
-    }
-
-    function _bribeKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _bribeKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
     }
 
     function _getBribeLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
@@ -57,11 +53,8 @@ contract HoneyBribe is IMoveSet {
         uint256 defenderMonIndex = TargetLib.activeAt(activesPacked, targetSlot);
         // Heal active mon by max HP / 2**bribeLevel
         uint256 bribeLevel = _getBribeLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
-        uint32 maxHp =
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        (uint32 maxHp, int32 currentDamage) = engine.getMonHpState(battleKey, attackerPlayerIndex, attackerMonIndex);
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** bribeLevel))));
-        int32 currentDamage =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }

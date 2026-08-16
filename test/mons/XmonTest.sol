@@ -968,7 +968,7 @@ contract XmonTest is Test, BattleHelper {
         defaultRegistry.setTeam(ALICE, team);
         defaultRegistry.setTeam(BOB, team);
 
-        // Use the sentinel address that flips Engine into `hasInlineStaminaRegen` mode.
+        // Use the sentinel address that flips Engine into full inline-regen mode.
         bytes32 battleKey = _startBattle(
             engine,
             mockOracle,

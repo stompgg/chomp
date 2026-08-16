@@ -529,6 +529,10 @@ class ContractGenerator(BaseGenerator):
             if var.initial_value
             else self._type_converter.default_value(ts_type, var.type_name)
         )
+        if var.initial_value:
+            default_val = self._type_converter.convert_bytes_string_literal(
+                var.type_name, var.initial_value, default_val
+            )
         return f'{self.indent()}{modifier}{var.name}: {ts_type} = {default_val};'
 
     def _generate_mapping_variable(
@@ -578,7 +582,7 @@ class ContractGenerator(BaseGenerator):
             key_ts = self._type_converter.solidity_type_to_ts(key_tn)
             param = f'key{i + 1}' if len(keys) > 1 else 'key'
             params.append(f'{param}: {key_ts}')
-            indexer = f'String({param})' if key_ts == 'bigint' else param
+            indexer = f'__ik({param})' if key_ts == 'bigint' else param
             access += f'[{indexer}]' if i == 0 else f'?.[{indexer}]'
 
         default = self._type_converter.default_value(value_ts, value_tn)
@@ -640,7 +644,7 @@ class ContractGenerator(BaseGenerator):
             key_params.append(f'{key_name}: {key_ts_type}')
 
             # Convert non-string keys to string for Record indexing
-            key_access = key_name if key_ts_type == 'string' else f'String({key_name})'
+            key_access = key_name if key_ts_type == 'string' else f'__ik({key_name})'
 
             if current_type.value_type.is_mapping:
                 null_coalesce_lines.append(

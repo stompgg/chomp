@@ -266,9 +266,11 @@ class TestYulTranspiler(unittest.TestCase):
             }
         '''
         result = self.transpiler.transpile(yul_code)
-        self.assertIn('_getStorageKey(myVar', result)
-        self.assertIn('_storageRead(myVar', result)
-        self.assertIn('_storageWrite(myVar', result)
+        # `.slot` of a storage struct passes the struct ref straight through — the runtime
+        # accessors key object refs by their symbol-stored word.
+        self.assertIn('const slot = myVar as any;', result)
+        self.assertIn('_storageRead(myVar as any)', result)
+        self.assertIn('_storageWrite(myVar as any', result)
 
     def test_unmodelable_calldata_assembly_flagged(self):
         """Raw calldata reads / calldata .offset have no faithful simulation, so
@@ -1078,8 +1080,10 @@ class TestTypeCastGeneration(unittest.TestCase):
         generator = TypeScriptCodeGenerator()
         output = generator.generate(ast)
 
-        # Should have BigInt wrapping for numeric type casts
-        self.assertIn('BigInt', output)
+        # A statically-bigint operand needs no BigInt() wrap — the cast elides to the
+        # operand itself (int256 params are already bigint in TS).
+        self.assertIn('return x;', output)
+        self.assertNotIn('BigInt(x)', output)
 
     def test_address_cast(self):
         """Test address type cast."""

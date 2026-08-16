@@ -1,5 +1,6 @@
-//! Game loop + batch runner — port of `sims/src/arena/game.ts`'s
-//! `runGameLoop` seating/peek/salt semantics, driving [`Sim`] natively.
+//! Game loop + batch runner — the seating/peek/salt semantics munch's
+//! arena also implements (`sim-tests/arena/game.ts`), driving [`Sim`]
+//! natively.
 //!
 //! RNG stream discipline (must match TS turn-for-turn): the p0 seat
 //! decides first (its candidate enumeration + tie-breaks draw from the
@@ -10,50 +11,29 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use chomp_engine::Engine;
+use chomp_engine::Enums::MonStateIndexName;
 use chomp_engine::Structs::Mon;
 use chomp_rt::{Address, B256};
 
 use crate::native::ForkCache;
 
+use crate::bot::{BattleMode, Bot, BotConfig, DecisionCtx};
+use crate::bots;
 use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::greedy;
 use crate::heuristic::{self, HeuristicState};
-use crate::jsrng::{random_salt, JsRng};
+use crate::jsrng::{derive, random_salt, JsRng, STREAM_P0, STREAM_P1, STREAM_SALT};
 use crate::nopeek;
 use crate::override_cpu::{self, OverrideState};
 use crate::search;
 use crate::sim::Sim;
 use crate::view::{
-    active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp, Mv,
-    Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
+    active_mon_indices, capture_view, ko_bitmap, mon_current_hp, mon_current_stamina, mon_max_hp,
+    mon_state, mon_value, Mv, Seat, NO_OP_INDEX, SWITCH_MOVE_INDEX, VCPU, VOPP,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StrategyKind {
-    Heuristic,
-    Greedy,
-    Override,
-    /// No-peek greedy, expectation over the opponent's plausible replies.
-    NoPeekExpect,
-    /// No-peek greedy, worst-case (maximin) over the opponent's plausible replies.
-    NoPeekWorst,
-}
-
-impl StrategyKind {
-    /// Names are a contract with the TS registry (`sims/src/cpu/registry.ts`)
-    /// and `workload.ts`'s STRAT_PAIRS — keep them in sync when adding a
-    /// strategy.
-    pub fn parse(name: &str) -> Option<StrategyKind> {
-        match name {
-            "heuristic" => Some(StrategyKind::Heuristic),
-            "greedy" => Some(StrategyKind::Greedy),
-            "override" => Some(StrategyKind::Override),
-            "nopeek" => Some(StrategyKind::NoPeekExpect),
-            "nopeek-wc" => Some(StrategyKind::NoPeekWorst),
-            _ => None,
-        }
-    }
-}
+/// A seat's bot, named by its registry key (see [`crate::bots::NAMES`]).
+pub type BotName = &'static str;
 
 #[derive(Clone)]
 pub struct GameSpec {
@@ -66,13 +46,18 @@ pub struct GameSpec {
     /// look up per-mon config by identity. Empty to disable (config stays inert).
     pub p0_ids: Vec<u32>,
     pub p1_ids: Vec<u32>,
-    pub p0_strategy: StrategyKind,
-    pub p1_strategy: StrategyKind,
+    pub p0_strategy: BotName,
+    pub p1_strategy: BotName,
+    /// Which seat sees the opponent's move this game. `None` is blind mode —
+    /// genuinely simultaneous, and what production play looks like. The seat
+    /// without the reveal always decides first, so the peeker sees a real move
+    /// rather than a stale one.
+    pub peek_seat: Option<u8>,
     /// Per-seat evaluator weights (default [`DEFAULT_WEIGHTS`]); lets a candidate
     /// weight vector face a baseline opponent in the same game.
     pub p0_weights: Weights,
     pub p1_weights: Weights,
-    /// Per-seat search depth: 0 = the seat plays its `StrategyKind`; ≥1 = maximin
+    /// Per-seat search depth: 0 = the seat plays its `BotName`; ≥1 = maximin
     /// search at that depth over the seat's evaluator (ignores the strategy).
     pub p0_search_depth: u32,
     pub p1_search_depth: u32,
@@ -83,6 +68,39 @@ pub struct GameSpec {
     /// pure maximin — mind-games at yomi points, seeded (deterministic per game seed).
     pub p0_search_mixed: bool,
     pub p1_search_mixed: bool,
+    /// Per-seat singles-search shaping (vetoes + settlement); default = shipped search.
+    pub p0_search_opts: crate::search::SearchOpts,
+    pub p1_search_opts: crate::search::SearchOpts,
+}
+
+/// One game's generators: one per seat plus the engine's salt stream.
+///
+/// Seats draw from their own stream so a bot's draw count cannot shift the
+/// battle or its opponent — same seed means the same salts whoever pilots,
+/// which is what makes two bots comparable on one seed.
+#[derive(Clone, Copy)]
+struct GameRngs {
+    p0: JsRng,
+    p1: JsRng,
+    salt: JsRng,
+}
+
+impl GameRngs {
+    fn seat_mut(&mut self, i: usize) -> &mut JsRng {
+        if i == 0 {
+            &mut self.p0
+        } else {
+            &mut self.p1
+        }
+    }
+
+    fn new(seed: u32) -> GameRngs {
+        GameRngs {
+            p0: derive(seed, STREAM_P0),
+            p1: derive(seed, STREAM_P1),
+            salt: derive(seed, STREAM_SALT),
+        }
+    }
 }
 
 /// One turn's submitted moves (physical p0/p1; None = side didn't act).
@@ -100,80 +118,95 @@ pub struct GameOutcome {
     pub trace: Vec<TurnTrace>,
 }
 
-/// Per-seat mutable strategy state (`createState()` in the TS framework).
-enum StratState {
-    Heuristic(HeuristicState),
-    Greedy,
-    Override(OverrideState),
-    NoPeekExpect,
-    NoPeekWorst,
-}
-
-impl StratState {
-    fn new(kind: StrategyKind) -> StratState {
-        match kind {
-            StrategyKind::Heuristic => StratState::Heuristic(HeuristicState::default()),
-            StrategyKind::Greedy => StratState::Greedy,
-            StrategyKind::Override => StratState::Override(OverrideState::default()),
-            StrategyKind::NoPeekExpect => StratState::NoPeekExpect,
-            StrategyKind::NoPeekWorst => StratState::NoPeekWorst,
-        }
-    }
-}
-
 struct SeatState {
     seat: Seat,
-    state: StratState,
+    bot: Box<dyn Bot>,
     last_own_move: Mv,
-    weights: Weights,
-    search_depth: u32,
-    search_peek: bool,
-    search_mixed: bool,
 }
 
-/// The two seats for a spec — the one place per-seat weights get wired in.
+/// The two seats for a spec — the one place per-seat bot config gets wired in.
 fn init_seats(spec: &GameSpec) -> [SeatState; 2] {
+    let build = |name: BotName, cfg: BotConfig| {
+        bots::build(name, cfg).unwrap_or_else(|| panic!("unknown bot {name:?}"))
+    };
     [
         SeatState {
             seat: Seat { cpu: 0 },
-            state: StratState::new(spec.p0_strategy),
+            bot: build(
+                spec.p0_strategy,
+                BotConfig {
+                    doubles_eval: Default::default(),
+                    weights: spec.p0_weights,
+                    search_depth: spec.p0_search_depth,
+                    search_peek: spec.p0_search_peek,
+                    search_mixed: spec.p0_search_mixed,
+                    search_opts: spec.p0_search_opts,
+                },
+            ),
             last_own_move: Mv { move_index: 0, extra_data: 0 },
-            weights: spec.p0_weights,
-            search_depth: spec.p0_search_depth,
-            search_peek: spec.p0_search_peek,
-            search_mixed: spec.p0_search_mixed,
         },
         SeatState {
             seat: Seat { cpu: 1 },
-            state: StratState::new(spec.p1_strategy),
+            bot: build(
+                spec.p1_strategy,
+                BotConfig {
+                    doubles_eval: Default::default(),
+                    weights: spec.p1_weights,
+                    search_depth: spec.p1_search_depth,
+                    search_peek: spec.p1_search_peek,
+                    search_mixed: spec.p1_search_mixed,
+                    search_opts: spec.p1_search_opts,
+                },
+            ),
             last_own_move: Mv { move_index: 0, extra_data: 0 },
-            weights: spec.p1_weights,
-            search_depth: spec.p1_search_depth,
-            search_peek: spec.p1_search_peek,
-            search_mixed: spec.p1_search_mixed,
         },
     ]
 }
 
-fn decide_one(sim: &mut Sim, s: &mut SeatState, pm: Mv, rng: &mut JsRng) -> Mv {
+fn decide_one(sim: &mut Sim, s: &mut SeatState, peek: Option<Mv>, rng: &mut JsRng) -> Mv {
     let view = capture_view(sim, s.seat, sim.battle_key);
-    let w = s.weights;
-    if s.search_depth >= 1 {
-        // Maximin search over the seat's evaluator (ignores the strategy). `pm` (the revealed
-        // opponent move) is used only when `search_peek` is set.
-        return search::decide(sim, s.seat, &view, pm, &w, s.search_depth, s.search_peek, s.search_mixed, rng);
+    let mut ctx = DecisionCtx {
+        sim,
+        seat: s.seat,
+        mode: BattleMode::Singles,
+        view: Some(&view),
+        peek,
+        rng,
+    };
+    s.bot.decide(&mut ctx).single()
+}
+
+/// Both seats decide one turn under the spec's information mode.
+///
+/// The seat without the reveal moves first; in blind mode neither is given
+/// one, so order carries no information and only fixes the rng draw sequence.
+fn decide_turn(
+    sim: &mut Sim,
+    seats: &mut [SeatState; 2],
+    rngs: &mut GameRngs,
+    peek_seat: Option<u8>,
+    acts: [bool; 2],
+) -> [Option<Mv>; 2] {
+    let first = if peek_seat == Some(0) { 1usize } else { 0usize };
+    let second = 1 - first;
+    let mut moves: [Option<Mv>; 2] = [None, None];
+
+    if acts[first] {
+        let mv = decide_one(sim, &mut seats[first], None, rngs.seat_mut(first));
+        seats[first].last_own_move = mv;
+        moves[first] = Some(mv);
     }
-    match &mut s.state {
-        StratState::Heuristic(st) => heuristic::decide(sim, s.seat, &view, pm, rng, st, &w),
-        StratState::Greedy => greedy::decide(sim, s.seat, &view, pm, rng, &w),
-        StratState::Override(st) => override_cpu::decide(sim, s.seat, &view, pm, rng, st, &w),
-        StratState::NoPeekExpect => nopeek::decide_expect(sim, s.seat, &view, rng, &w),
-        StratState::NoPeekWorst => nopeek::decide_worst(sim, s.seat, &view, rng, &w),
+    if acts[second] {
+        let peek = if peek_seat == Some(second as u8) { moves[first] } else { None };
+        let mv = decide_one(sim, &mut seats[second], peek, rngs.seat_mut(second));
+        seats[second].last_own_move = mv;
+        moves[second] = Some(mv);
     }
+    moves
 }
 
 pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) -> GameOutcome {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -198,30 +231,16 @@ pub fn play_game(spec: &GameSpec, book: &HashMap<String, Address>, trace: bool) 
         let p0_acts = flag != 1;
         let p1_acts = flag != 0;
 
-        // p0 seat decides first, peeking only the opponent's previous move.
-        let mut p0_move: Option<Mv> = None;
-        if p0_acts {
-            let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
-            seats[0].last_own_move = mv;
-            p0_move = Some(mv);
-        }
-        // p1 seat replies with the true reveal (production semantics).
-        let mut p1_move: Option<Mv> = None;
-        if p1_acts {
-            let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
-            seats[1].last_own_move = mv;
-            p1_move = Some(mv);
-        }
+        let [p0_move, p1_move] =
+            decide_turn(&mut sim, &mut seats, &mut rngs, spec.peek_seat, [p0_acts, p1_acts]);
 
         if trace {
             traces.push(TurnTrace { p0: p0_move, p1: p1_move });
         }
 
         // Salt only for an acting side, p0 before p1.
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX),
             p0_salt,
@@ -249,7 +268,7 @@ pub fn narrate_game(
     name_mon: impl Fn(u32) -> String,
     name_move: impl Fn(u32, u8) -> String,
 ) -> GameOutcome {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -305,7 +324,7 @@ pub fn narrate_game(
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[0], Some(peek), &mut rngs.p0);
             seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
@@ -317,14 +336,14 @@ pub fn narrate_game(
             // fork counter + greedy's own dispose_all leave the live decision fully unperturbed.
             // Run it for a search seat too (the search overrides the strategy), so `⟂ greedy→`
             // flags where the search diverges from the greedy baseline.
-            if seats[1].search_depth >= 1 || !matches!(seats[1].state, StratState::Greedy) {
+            if seats[1].bot.name() != bots::GREEDY {
                 let cf_view = capture_view(&mut sim, seats[1].seat, bk);
-                let mut cf_rng = rng; // JsRng: Copy — a throwaway snapshot of the live stream
+                let mut cf_rng = rngs.p1; // JsRng: Copy — a throwaway snapshot of the live stream
                 let saved_fc = sim.fork_counter();
-                p1_greedy_cf = Some(greedy::decide(&mut sim, seats[1].seat, &cf_view, peek, &mut cf_rng, &seats[1].weights));
+                p1_greedy_cf = Some(greedy::decide(&mut sim, seats[1].seat, &cf_view, peek, &mut cf_rng, &spec.p1_weights));
                 sim.set_fork_counter(saved_fc);
             }
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[1], Some(peek), &mut rngs.p1);
             seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
@@ -344,8 +363,8 @@ pub fn narrate_game(
             name_mon(spec.p0_ids[p0_active]), name_mon(spec.p1_ids[p1_active]),
         );
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p0_salt, p0_move.map(|m| m.extra_data).unwrap_or(0),
             p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p1_salt, p1_move.map(|m| m.extra_data).unwrap_or(0),
@@ -446,7 +465,7 @@ pub struct TraceRecord {
 }
 
 pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> TraceRecord {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -474,14 +493,14 @@ pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> Tra
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[0], Some(peek), &mut rngs.p0);
             seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
         let mut p1_move: Option<Mv> = None;
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[1], Some(peek), &mut rngs.p1);
             seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
@@ -491,8 +510,8 @@ pub fn play_game_traced(spec: &GameSpec, book: &HashMap<String, Address>) -> Tra
         let p0_hp_pre = mon_current_hp(&mut sim, obs, bk, VOPP, p0a);
         let p1_hp_pre = mon_current_hp(&mut sim, obs, bk, VCPU, p1a);
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p0_salt, p0_move.map(|m| m.extra_data).unwrap_or(0),
             p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p1_salt, p1_move.map(|m| m.extra_data).unwrap_or(0),
@@ -544,7 +563,7 @@ pub struct YomiSample {
 }
 
 pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<YomiSample> {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -575,7 +594,8 @@ pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<Y
                 let _ = seat_slot;
                 let seat = seats[si].seat;
                 let view = capture_view(&mut sim, seat, bk);
-                let mut scratch = rng; // JsRng: Copy — leaves the live stream untouched
+                // JsRng: Copy — snapshot the analysed seat's own stream, leaving it untouched.
+                let mut scratch = if si == 0 { rngs.p0 } else { rngs.p1 };
                 let mut fc = ForkCache::new(DEFAULT_WEIGHTS);
                 let (_my, _opp, grid) = nopeek::action_grid(&mut sim, seat, &view, &mut scratch, &mut fc);
                 fc.dispose_all(&mut sim);
@@ -589,20 +609,20 @@ pub fn play_game_yomi(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<Y
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[0], Some(peek), &mut rngs.p0);
             seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
         let mut p1_move: Option<Mv> = None;
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[1], Some(peek), &mut rngs.p1);
             seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p0_salt, p0_move.map(|m| m.extra_data).unwrap_or(0),
             p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p1_salt, p1_move.map(|m| m.extra_data).unwrap_or(0),
@@ -653,7 +673,7 @@ fn summarize_scored(scored: &[(Mv, f64)]) -> ([f64; 4], f64, f64, f64) {
 }
 
 pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Vec<BreadthSample> {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team, spec.p0_team.clone(), spec.p1_team.clone(),
         spec.p0_ids.clone(), spec.p1_ids.clone(), book,
@@ -677,7 +697,7 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let view = capture_view(&mut sim, seat0, bk);
-            let (chosen, scored) = greedy::decide_scored(&mut sim, seat0, &view, last1, &mut rng, &DEFAULT_WEIGHTS);
+            let (chosen, scored) = greedy::decide_scored(&mut sim, seat0, &view, last1, &mut rngs.p0, &DEFAULT_WEIGHTS);
             if !scored.is_empty() {
                 let (lane, t1, t2, w) = summarize_scored(&scored);
                 samples.push(BreadthSample { mon_id: spec.p0_ids[p0a], chosen_move: chosen.move_index as i16, lane_scores: lane, top1: t1, top2: t2, worst: w });
@@ -688,7 +708,7 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
             let view = capture_view(&mut sim, seat1, bk);
-            let (chosen, scored) = greedy::decide_scored(&mut sim, seat1, &view, peek, &mut rng, &DEFAULT_WEIGHTS);
+            let (chosen, scored) = greedy::decide_scored(&mut sim, seat1, &view, peek, &mut rngs.p1, &DEFAULT_WEIGHTS);
             if !scored.is_empty() {
                 let (lane, t1, t2, w) = summarize_scored(&scored);
                 samples.push(BreadthSample { mon_id: spec.p1_ids[p1a], chosen_move: chosen.move_index as i16, lane_scores: lane, top1: t1, top2: t2, worst: w });
@@ -697,8 +717,8 @@ pub fn play_game_breadth(spec: &GameSpec, book: &HashMap<String, Address>) -> Ve
             p1_move = Some(chosen);
         }
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p0_salt, p0_move.map(|m| m.extra_data).unwrap_or(0),
             p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p1_salt, p1_move.map(|m| m.extra_data).unwrap_or(0),
@@ -743,10 +763,14 @@ pub struct InstrRecord {
     pub active_turns_p0: Vec<u32>,
     pub active_turns_p1: Vec<u32>,
     pub kos: Vec<KoEvent>,
+    /// Largest (base + delta) any combat stat reached, and which mon-id held it — stat boosts are
+    /// multiplicative, so this shows how far compounding actually runs in a real game.
+    pub peak_stat: i64,
+    pub peak_stat_mon: u32,
 }
 
 pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) -> InstrRecord {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team,
         spec.p0_team.clone(),
@@ -764,14 +788,39 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
     let mut active_turns_p0 = vec![0u32; spec.p0_ids.len()];
     let mut active_turns_p1 = vec![0u32; spec.p1_ids.len()];
     let mut kos: Vec<KoEvent> = Vec::new();
+    let (mut peak_stat, mut peak_stat_mon) = (0i64, 0u32);
 
     for t in 0..spec.max_turns {
+        // Boosts are multiplicative and stack per source, so track how far the combat stats actually
+        // compound; MAX_BOOSTED_STAT lets a stat reach int32::max, which the damage formula then
+        // scales by base power.
+        {
+            let bk_now: B256 = sim.battle_key;
+            for (vp, ids) in [(VOPP, &spec.p0_ids), (VCPU, &spec.p1_ids)] {
+                for (mi, &id) in ids.iter().enumerate() {
+                    for ix in [
+                        MonStateIndexName::Attack,
+                        MonStateIndexName::SpecialAttack,
+                        MonStateIndexName::Defense,
+                        MonStateIndexName::SpecialDefense,
+                    ] {
+                        let v = mon_value(&mut sim, obs, bk_now, vp, mi, ix)
+                            + mon_state(&mut sim, obs, bk_now, vp, mi, ix);
+                        if v > peak_stat {
+                            peak_stat = v;
+                            peak_stat_mon = id;
+                        }
+                    }
+                }
+            }
+        }
         let winner = sim.winner_index();
         if winner != 2 {
             return InstrRecord {
                 winner_seat: Some(winner), turns: t,
                 p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
                 active_turns_p0, active_turns_p1, kos,
+                peak_stat, peak_stat_mon,
             };
         }
 
@@ -783,14 +832,14 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[0], Some(peek), &mut rngs.p0);
             seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
         let mut p1_move: Option<Mv> = None;
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[1], Some(peek), &mut rngs.p1);
             seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
@@ -802,8 +851,8 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
         let ko_before_p0 = ko_bitmap(&mut sim, obs, bk, VOPP);
         let ko_before_p1 = ko_bitmap(&mut sim, obs, bk, VCPU);
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX),
             p0_salt,
@@ -843,6 +892,7 @@ pub fn play_game_instrumented(spec: &GameSpec, book: &HashMap<String, Address>) 
         turns: spec.max_turns,
         p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(),
         active_turns_p0, active_turns_p1, kos,
+        peak_stat, peak_stat_mon,
     }
 }
 
@@ -868,7 +918,7 @@ pub fn play_game_mock(
     lane: usize,
     mock: &crate::mock2::MockMove,
 ) -> InstrRecord {
-    let mut rng = JsRng::new(spec.seed);
+    let mut rngs = GameRngs::new(spec.seed);
     let mut sim = Sim::new(
         spec.mons_per_team, spec.p0_team.clone(), spec.p1_team.clone(),
         spec.p0_ids.clone(), spec.p1_ids.clone(), book,
@@ -884,7 +934,7 @@ pub fn play_game_mock(
     for t in 0..spec.max_turns {
         let winner = sim.winner_index();
         if winner != 2 {
-            return InstrRecord { winner_seat: Some(winner), turns: t, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos };
+            return InstrRecord { winner_seat: Some(winner), turns: t, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos, peak_stat: 0, peak_stat_mon: 0 };
         }
         let bk: B256 = sim.battle_key;
 
@@ -898,14 +948,14 @@ pub fn play_game_mock(
         let mut p0_move: Option<Mv> = None;
         if p0_acts {
             let peek = seats[1].last_own_move;
-            let mv = decide_one(&mut sim, &mut seats[0], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[0], Some(peek), &mut rngs.p0);
             seats[0].last_own_move = mv;
             p0_move = Some(mv);
         }
         let mut p1_move: Option<Mv> = None;
         if p1_acts {
             let peek = p0_move.unwrap_or(Mv { move_index: 0, extra_data: 0 });
-            let mv = decide_one(&mut sim, &mut seats[1], peek, &mut rng);
+            let mv = decide_one(&mut sim, &mut seats[1], Some(peek), &mut rngs.p1);
             seats[1].last_own_move = mv;
             p1_move = Some(mv);
         }
@@ -921,8 +971,8 @@ pub fn play_game_mock(
         let mhp0_before = if spec.p0_ids.get(p0a) == Some(&target_id) { mon_current_hp(&mut sim, obs, bk, VOPP, p0a) } else { i64::MIN };
         let mhp1_before = if spec.p1_ids.get(p1a) == Some(&target_id) { mon_current_hp(&mut sim, obs, bk, VCPU, p1a) } else { i64::MIN };
 
-        let p0_salt = if p0_move.is_some() { random_salt(&mut rng) } else { 0 };
-        let p1_salt = if p1_move.is_some() { random_salt(&mut rng) } else { 0 };
+        let p0_salt = if p0_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
+        let p1_salt = if p1_move.is_some() { random_salt(&mut rngs.salt) } else { 0 };
         sim.execute_turn(
             p0_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p0_salt, p0_move.map(|m| m.extra_data).unwrap_or(0),
             p1_move.map(|m| m.move_index).unwrap_or(NO_OP_INDEX), p1_salt, p1_move.map(|m| m.extra_data).unwrap_or(0),
@@ -956,7 +1006,7 @@ pub fn play_game_mock(
     }
 
     let fw = sim.winner_index();
-    InstrRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, turns: spec.max_turns, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos }
+    InstrRecord { winner_seat: if fw != 2 { Some(fw) } else { None }, turns: spec.max_turns, p0_ids: spec.p0_ids.clone(), p1_ids: spec.p1_ids.clone(), active_turns_p0, active_turns_p1, kos, peak_stat: 0, peak_stat_mon: 0 }
 }
 
 /// Threaded mock batch (see `run_batch`); the mock's word is repacked each turn in play_game_mock.

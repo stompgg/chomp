@@ -20,10 +20,6 @@ contract TestMove is IMoveSet {
         _damage = damage;
     }
 
-    function name() external pure returns (string memory) {
-        return "Test Move";
-    }
-
     function move(
         IEngine engine,
         bytes32,

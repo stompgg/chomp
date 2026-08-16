@@ -18,10 +18,6 @@ contract Sanctify is IMoveSet {
         BLESSED_STATUS = _BLESSED_STATUS;
     }
 
-    function name() public pure override returns (string memory) {
-        return "Sanctify";
-    }
-
     function move(
         IEngine engine,
         bytes32,

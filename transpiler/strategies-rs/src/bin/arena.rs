@@ -5,9 +5,14 @@
 //! Data (drool/*.csv, src/mons/*.json) is read relative to CHOMP_ROOT (default: the repo root
 //! inferred from the crate location).
 
-use chomp_strategies::arena::{doubles_search_winrate, eval_weights_winrate, run_arena, run_doubles_arena};
+use chomp_strategies::arena::{
+    doubles_ab_winrate, doubles_search_winrate, eval_weights_winrate, run_arena, run_doubles_arena, DoublesSideCfg,
+};
+use chomp_strategies::doubles::DoublesEvalW;
 use chomp_strategies::evaluator::{Weights, DEFAULT_WEIGHTS, N_FEATURES};
-use chomp_strategies::game::StrategyKind;
+use chomp_strategies::bot::InfoMode;
+use chomp_strategies::bots;
+use chomp_strategies::game::BotName;
 use chomp_strategies::roster::load_roster;
 use std::path::PathBuf;
 
@@ -43,18 +48,49 @@ fn main() {
     let threads = arg_u(&args, "--threads", default_threads as u64) as usize;
 
     let mode = arg(&args, "--mode").unwrap_or_else(|| "singles".to_string());
+    // Blind is the default: simultaneous moves, symmetric seats.
+    let info = arg(&args, "--info")
+        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate"))
+        .unwrap_or(InfoMode::Blind);
 
     let chomp_root = std::env::var("CHOMP_ROOT").map(PathBuf::from).unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..")
     });
 
     let roster = load_roster(&chomp_root);
-    eprintln!("arena[{mode}]: {} mons · {} games · {} threads · seed {:#x}", roster.mons.len(), games, threads, seed);
+    eprintln!("arena[{mode}/{}]: {} mons · {} games · {} threads · seed {:#x}", info.label(), roster.mons.len(), games, threads, seed);
 
     // A/B a candidate linear weight vector vs the frozen baseline. `--search-depth N` (≥1) makes p1
     // play no-peek maximin search at depth N over the weights; 0 = 1-ply greedy over them.
     let search_depth = arg_u(&args, "--search-depth", 0) as u32;
     let peek = args.iter().any(|a| a == "--peek"); // peek-at-root best-response for the search seat
+
+    // Doubles eval-weight A/B: candidate (side flags below) vs the default-weight baseline, both
+    // searching. Same teams/seats per pair with configs exchanged, so only the config differs.
+    //   --mode doubles-ab [--depth N] [--base-depth N] [--wboost F] [--wstatus F] [--wskip F] [--gateko]
+    if mode == "doubles-ab" {
+        let argf = |flag: &str, def: f64| arg(&args, flag).map(|v| v.parse().expect("float flag")).unwrap_or(def);
+        let depth = arg_u(&args, "--depth", 1) as u32;
+        let base_depth = arg_u(&args, "--base-depth", depth as u64) as u32;
+        let eval = DoublesEvalW {
+            w_boost: argf("--wboost", 0.0),
+            w_status: argf("--wstatus", 0.0),
+            w_skip: argf("--wskip", 0.0),
+            gate_ko: args.iter().any(|a| a == "--gateko"),
+            ..DoublesEvalW::default()
+        };
+        let cand = DoublesSideCfg { depth, eval, ..Default::default() };
+        let base = DoublesSideCfg { depth: base_depth, ..Default::default() };
+        let started = std::time::Instant::now();
+        let r = doubles_ab_winrate(&roster, cand, base, games, seed, seed_base, threads);
+        let elapsed = started.elapsed().as_secs_f64();
+        println!(
+            "cand d{depth} boost={} status={} skip={} gateko={}  vs  base d{base_depth} default  ·  {} games  ·  win {:.1}%  ({}-{}-{} draws)",
+            eval.w_boost, eval.w_status, eval.w_skip, eval.gate_ko, games, r.share * 100.0, r.cand_wins, r.base_wins, r.draws
+        );
+        eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
+        return;
+    }
 
     // Doubles maximin search vs the epsilon-greedy Hard baseline (Phase-3 substrate check).
     if mode == "doubles" && search_depth >= 1 {
@@ -74,13 +110,28 @@ fn main() {
         None
     };
     if let Some((label, cand)) = cand {
+        let base_depth = arg_u(&args, "--base-depth", 0) as u32;
+        let cand_opts = chomp_strategies::search::SearchOpts {
+            vetoes: if args.iter().any(|a| a == "--veto-rest") {
+                chomp_strategies::search::VETO_DRAIN_LOCK_REST
+            } else {
+                0
+            },
+            settle_rounds: arg_u(&args, "--settle", 0) as u32,
+            opp_streak: 0,
+            beam_k: arg_u(&args, "--beam", 0) as usize,
+            int_actions: arg_u(&args, "--int-actions", 0) as usize,
+            int_actions_deep: arg_u(&args, "--int-deep", 0) as usize,
+        };
         let started = std::time::Instant::now();
         let wr = eval_weights_winrate(
-            &roster, &cand, search_depth, peek, StrategyKind::Greedy, StrategyKind::Greedy, games, seed, seed_base, threads,
+            &roster, &cand, search_depth, peek, bots::GREEDY, bots::GREEDY, base_depth, cand_opts, games, seed,
+            seed_base, threads,
         );
         let elapsed = started.elapsed().as_secs_f64();
         let m = if search_depth >= 1 { format!("d{search_depth}-search") } else { "1-ply".to_string() };
-        println!("{label} ({m}) p1  vs  greedy(default) p0  ·  {games} games  ·  win {:.1}%", wr * 100.0);
+        let b = if base_depth >= 1 { format!("d{base_depth}-search(default)") } else { "greedy(default)".to_string() };
+        println!("{label} ({m}) p1  vs  {b} p0  ·  {games} games  ·  win {:.1}%", wr * 100.0);
         eprintln!("{games} games in {elapsed:.2}s ({:.0} games/s)", games as f64 / elapsed);
         return;
     }
@@ -95,7 +146,7 @@ fn main() {
             );
         }
     } else {
-        for s in &run_arena(&roster, games, seed, seed_base, threads) {
+        for s in &run_arena(&roster, games, seed, seed_base, threads, info) {
             println!(
                 "{:>9}  {:>9}  {:>6}  {:>6.1}%  {:>4}-{:>3}-{:<4}",
                 s.p1_strat, s.p0_strat, s.games, s.p1_rate() * 100.0, s.p1_wins, s.p0_wins, s.draws

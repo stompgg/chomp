@@ -5,7 +5,8 @@
  * including storage simulation, bit manipulation, and type utilities.
  */
 
-import { keccak256, encodePacked, encodeAbiParameters, parseAbiParameters, toHex, hexToBigInt, sha256 as viemSha256 } from 'viem';
+import { parseAbiParameters, toHex, hexToBigInt, sha256 as viemSha256 } from 'viem';
+import { keccak256, encodePacked, encodeAbiParameters } from './base';
 
 // Note: Contract, Storage, EventStream, and globalEventStream are defined in ./base
 // and re-exported here. Runtime replacement modules (Ownable, etc.) import
@@ -248,7 +249,7 @@ export function uintToBytes32(value: bigint): string {
 // HASH FUNCTIONS
 // =============================================================================
 
-export { keccak256 } from 'viem';
+export { keccak256 } from './base';
 
 // sha256 is defined at the top of the file with Node.js crypto
 
@@ -256,7 +257,8 @@ export { keccak256 } from 'viem';
 // ABI ENCODING
 // =============================================================================
 
-export { encodePacked, encodeAbiParameters, parseAbiParameters } from 'viem';
+export { encodePacked, encodeAbiParameters, __ik } from './base';
+export { parseAbiParameters } from 'viem';
 
 /**
  * Simple ABI encode for common types

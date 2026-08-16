@@ -9,6 +9,7 @@ Resolution order:
 Unresolved dependencies are tracked and can be exported for user action.
 """
 
+import json
 from typing import Dict, List, Optional, Set, Tuple, Union
 from dataclasses import dataclass
 

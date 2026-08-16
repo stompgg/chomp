@@ -17,10 +17,6 @@ contract ActusReus is IAbility, BasicEffect {
     uint8 public constant SPEED_DEBUFF_PERCENT = 50;
     bytes32 public constant INDICTMENT = bytes32("INDICTMENT");
 
-    function name() public pure override(IAbility, BasicEffect) returns (string memory) {
-        return "Actus Reus";
-    }
-
     function activateOnSwitch(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex) external {
         // Check if the effect has already been set for this mon
         (EffectInstance[] memory effects,) = engine.getEffects(battleKey, playerIndex, monIndex);
@@ -33,7 +29,7 @@ contract ActusReus is IAbility, BasicEffect {
     }
 
     // Steps: AfterDamage, AfterMove
-    function getStepsBitmap() external pure override returns (uint16) {
+    function getStepsBitmap() external pure override returns (uint32) {
         return 0x80C0;
     }
 

@@ -13,12 +13,8 @@ contract SnackBreak is IMoveSet {
     uint256 public constant DEFAULT_HEAL_DENOM = 2;
     uint256 public constant MAX_DIVISOR = 3;
 
-    function name() public pure override returns (string memory) {
-        return "Snack Break";
-    }
-
-    function _snackKey(uint256 playerIndex, uint256 monIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, name()))));
+    function _snackKey(uint256 playerIndex, uint256 monIndex) internal view returns (uint64) {
+        return uint64(uint256(keccak256(abi.encode(playerIndex, monIndex, address(this)))));
     }
 
     function _getSnackLevel(IEngine engine, bytes32 battleKey, uint256 playerIndex, uint256 monIndex)
@@ -47,13 +43,10 @@ contract SnackBreak is IMoveSet {
         uint256
     ) external {
         uint256 snackLevel = _getSnackLevel(engine, battleKey, attackerPlayerIndex, attackerMonIndex);
-        uint32 maxHp =
-            engine.getMonValueForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
+        (uint32 maxHp, int32 currentDamage) = engine.getMonHpState(battleKey, attackerPlayerIndex, attackerMonIndex);
 
         // Heal active mon by max HP / 2**snackLevel
         int32 healAmount = int32(uint32(maxHp / (DEFAULT_HEAL_DENOM * (2 ** snackLevel))));
-        int32 currentDamage =
-            engine.getMonStateForBattle(battleKey, attackerPlayerIndex, attackerMonIndex, MonStateIndexName.Hp);
         if (currentDamage + healAmount > 0) {
             healAmount = -1 * currentDamage;
         }

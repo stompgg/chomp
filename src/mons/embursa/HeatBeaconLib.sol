@@ -8,8 +8,12 @@ import "../../Enums.sol";
 import {IEngine} from "../../IEngine.sol";
 
 library HeatBeaconLib {
+    // Explicit tag rather than address(this): these are internal functions, so address(this) would
+    // resolve to whichever Embursa move inlined them and each would address a different slot.
+    bytes32 private constant KEY_TAG = "HEAT_BEACON";
+
     function _getKey(uint256 playerIndex) internal pure returns (uint64) {
-        return uint64(uint256(keccak256(abi.encode(playerIndex, "HEAT_BEACON"))));
+        return uint64(uint256(keccak256(abi.encode(playerIndex, KEY_TAG))));
     }
 
     function _getPriorityBoost(IEngine engine, bytes32 battleKey, uint256 playerIndex) internal view returns (uint32) {

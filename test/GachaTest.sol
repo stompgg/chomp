@@ -108,6 +108,48 @@ contract GachaTest is Test, BattleHelper {
         gachaRegistry.firstRoll(invalidStarter);
     }
 
+    // Granted points must not let an account roll straight past onboarding: it would
+    // end up owning mons with no starter and no team, which nothing downstream repairs.
+    function test_roll_beforeFirstRoll_reverts() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
+                }),
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
+            );
+        }
+        // Fund the roll so the guard is what reverts, not the points underflow.
+        address[] memory selfList = new address[](1);
+        selfList[0] = address(this);
+        gachaRegistry.setAssigners(selfList, new address[](0));
+        gachaRegistry.assignPoints(ALICE, 10 * gachaRegistry.ROLL_COST());
+
+        vm.expectRevert(GachaTeamRegistry.NotFirstRolled.selector);
+        vm.prank(ALICE);
+        gachaRegistry.roll(1);
+
+        // Same account clears the guard once onboarding has actually run.
+        vm.startPrank(ALICE);
+        gachaRegistry.firstRoll(0);
+        assertEq(gachaRegistry.roll(1).length, 1, "roll works after firstRoll");
+        vm.stopPrank();
+    }
+
     function test_firstRoll_emitsRollWithZeroSpend() public {
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
         uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
@@ -150,6 +192,50 @@ contract GachaTest is Test, BattleHelper {
             }
         }
         assertTrue(found, "Roll event emitted");
+    }
+
+    function test_firstRoll_createsStarterTeam() public {
+        GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(
+            GAME_MONS_PER_TEAM, GAME_MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0))
+        );
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
+                }),
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
+            );
+        }
+
+        vm.prank(ALICE);
+        uint256[] memory monIds = gachaRegistry.firstRoll(0);
+
+        assertEq(gachaRegistry.getTeamCount(ALICE), 1);
+        uint256[] memory teamMonIds = gachaRegistry.getMonRegistryIndicesForTeam(ALICE, 0);
+        assertEq(teamMonIds.length, monIds.length);
+        for (uint256 i; i < monIds.length; i++) {
+            assertEq(teamMonIds[i], monIds[i]);
+        }
+    }
+
+    function test_firstRoll_revertsWhenMonsPerTeamExceedsInitialRolls() public {
+        GachaTeamRegistry probe = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
+        uint256 tooMany = probe.INITIAL_ROLLS() + 1;
+        vm.expectRevert(GachaTeamRegistry.MonsPerTeamExceedsInitialRolls.selector);
+        new GachaTeamRegistry(tooMany, GAME_MOVES_PER_MON, engine, mockRNG, GachaTeamRegistry(address(0)));
     }
 
     function test_assignPoints() public {
@@ -348,25 +434,28 @@ contract GachaTest is Test, BattleHelper {
         // bonus must only fire once, even though a roll happens in between.
         GachaTeamRegistry gachaRegistry = new GachaTeamRegistry(0, 0, engine, mockRNG, GachaTeamRegistry(address(0)));
 
-        // One mon in the registry is enough for a single regular roll.
-        gachaRegistry.createMon(
-            0,
-            MonStats({
-                hp: 10,
-                stamina: 2,
-                speed: 2,
-                attack: 1,
-                defense: 1,
-                specialAttack: 1,
-                specialDefense: 1,
-                type1: Type.Fire,
-                type2: Type.None
-            }),
-            new uint256[](0),
-            new uint256[](0),
-            new bytes32[](0),
-            new bytes32[](0)
-        );
+        // roll() requires prior ownership, so the pool has to cover a firstRoll too.
+        uint256 poolSize = gachaRegistry.NUM_STARTERS() + gachaRegistry.INITIAL_ROLLS() - 1;
+        for (uint256 i = 0; i < poolSize; i++) {
+            gachaRegistry.createMon(
+                i,
+                MonStats({
+                    hp: 10,
+                    stamina: 2,
+                    speed: 2,
+                    attack: 1,
+                    defense: 1,
+                    specialAttack: 1,
+                    specialDefense: 1,
+                    type1: Type.Fire,
+                    type2: Type.None
+                }),
+                new uint256[](0),
+                new uint256[](0),
+                new bytes32[](0),
+                new bytes32[](0)
+            );
+        }
 
         Mon[] memory team = new Mon[](1);
         team[0] = Mon({
@@ -406,8 +495,9 @@ contract GachaTest is Test, BattleHelper {
             alicePointsAfterFirstBattle, gachaRegistry.FIRST_GAME_EVER_BONUS() + gachaRegistry.POINTS_PER_WIN() + 1
         );
 
-        // ---- Roll ----
+        // ---- Roll ---- (firstRoll is free, so it leaves the point accounting alone)
         vm.startPrank(ALICE);
+        gachaRegistry.firstRoll(0);
         gachaRegistry.roll(1);
         vm.stopPrank();
 
