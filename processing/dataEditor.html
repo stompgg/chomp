@@ -59,7 +59,8 @@
         position:sticky;top:0;background:var(--surface-deep);white-space:nowrap;z-index:1;}
       th.num,td.num{text-align:right;width:1%;padding-left:3px;padding-right:5px;}
       th.tight,td.tight{width:1%;padding-left:5px;padding-right:5px;}
-      td{padding:4px 8px;border-bottom:1px solid var(--row-line);color:var(--text-primary);white-space:nowrap;}
+      td{padding:4px 8px;border-bottom:1px solid var(--row-line);color:var(--text-primary);
+        white-space:nowrap;vertical-align:top;}
       tr:hover td{background:#151830;}
       .cell{background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text-bright);
         font-family:var(--font-mono);font-size:11.5px;width:100%;padding:2px 4px;}
@@ -68,6 +69,8 @@
       .cell.num{text-align:right;width:32px;padding:2px 3px;}
       .cell[readonly]{color:var(--text-dim);font-style:italic;}
       .cell.desc{min-width:300px;}
+      textarea.cell.desc{display:block;resize:none;overflow:hidden;white-space:pre-wrap;
+        line-height:1.5;padding:3px 4px;}
       .cell.edited{background:#2a2410;border-color:var(--text-warm-muted);}
       td.desc{white-space:normal;width:36%;}
       select.cell{appearance:none;cursor:pointer;}
@@ -230,6 +233,9 @@
       const TARGET_SPECS = ['opponent-slot','self-only','none','any-other-slot','ally-slot','any-subset'];
 
       const el = id => document.getElementById(id);
+      const escHtml = v => String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      const autosize = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+      const autosizeDescs = () => el('mv-tbl').querySelectorAll('textarea.desc').forEach(autosize);
       let state = null;                       // last payload from the server
       let mons = [], moves = [], teams = [];  // working copies
       let monEdits = new Set();               // "monId.Field"
@@ -368,6 +374,7 @@
         tab = btn.dataset.tab;
         document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b === btn));
         document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === `page-${tab}`));
+        if (tab === 'moves') autosizeDescs();
         refreshSaveBar();
       });
 
@@ -565,14 +572,19 @@
               style="${c.w ? `width:${c.w}px` : ''}"/></td>`;
           };
           return `<tr>${MV_COLS.map(cell).join('')}
-            <td class="desc"><input class="cell desc ${mark(dk)}" data-i="${m.index}" data-f="${dk}"
-              value="${(m[dk] || '').replace(/"/g,'&quot;')}"/></td>
+            <td class="desc"><textarea class="cell desc ${mark(dk)}" rows="1" data-i="${m.index}"
+              data-f="${dk}">${escHtml(m[dk] || '')}</textarea></td>
             <td><span class="src ${m.src}">${m.src}</span>
               <span style="color:var(--text-dim);font-size:10.5px;margin-left:6px">${m.file}</span></td></tr>`;
         }).join('');
 
         el('mv-tbl').querySelectorAll('[data-f]').forEach(input => input.onchange = () =>
           editMove(moves.find(m => m.index === +input.dataset.i), input.dataset.f, input.value));
+        el('mv-tbl').querySelectorAll('textarea.desc').forEach(ta => {
+          ta.oninput = () => autosize(ta);
+          ta.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); ta.blur(); } };
+        });
+        autosizeDescs();
 
         const count = s => moves.filter(m => m.src === s).length;
         el('mv-count').textContent = `${rows.length} / ${moves.length} moves · ` +
