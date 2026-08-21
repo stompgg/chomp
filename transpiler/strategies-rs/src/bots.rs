@@ -26,6 +26,9 @@ pub const EXAMPLE: &str = "example";
 /// so the ladder names it rather than hiding it in config.
 pub const SEARCH_D1: &str = "search-d1";
 pub const SEARCH_D2: &str = "search-d2";
+/// The singles Hell CPU exactly as munch ships it — pinned depth AND beam shape, so a config
+/// sweep can't quietly turn it back into the full-width ideal that no player ever faces.
+pub const SEARCH_SHIPPED: &str = "search-shipped";
 pub const DOUBLES_SEARCH_D1: &str = "doubles-search-d1";
 pub const DOUBLES_SEARCH_D2: &str = "doubles-search-d2";
 pub const DOUBLES_EASY: &str = "doubles-easy";
@@ -37,7 +40,7 @@ pub const DOUBLES_SPARSE_LEAN: &str = "doubles-sparse-lean";
 
 /// Every registered bot, in ladder order (weakest first).
 pub const NAMES: &[&str] =
-    &[RANDOM, EXAMPLE, GREEDY, HEURISTIC, OVERRIDE, NOPEEK, NOPEEK_WC, SEARCH, SEARCH_D1, SEARCH_D2];
+    &[RANDOM, EXAMPLE, GREEDY, HEURISTIC, OVERRIDE, NOPEEK, NOPEEK_WC, SEARCH, SEARCH_D1, SEARCH_D2, SEARCH_SHIPPED];
 
 /// Registered doubles bots, weakest first.
 pub const DOUBLES_NAMES: &[&str] = &[
@@ -313,7 +316,8 @@ impl Bot for SearchBot {
 /// bot's evaluator instead of playing it. That is the pre-trait behaviour and
 /// the arena's weight/depth sweeps depend on it.
 pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
-    let pinned = matches!(name, SEARCH_D1 | SEARCH_D2 | DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2);
+    let pinned =
+        matches!(name, SEARCH_D1 | SEARCH_D2 | SEARCH_SHIPPED | DOUBLES_SEARCH_D1 | DOUBLES_SEARCH_D2);
     if cfg.search_depth >= 1 && name != RANDOM && !pinned && !DOUBLES_NAMES.contains(&name) {
         return Some(Box::new(SearchBot {
             weights: cfg.weights,
@@ -334,6 +338,15 @@ pub fn build(name: &str, cfg: BotConfig) -> Option<Box<dyn Bot>> {
         OVERRIDE => Some(Box::new(OverrideBot { weights: w, state: OverrideState::default() })),
         NOPEEK => Some(Box::new(NoPeekBot { weights: w, worst_case: false })),
         NOPEEK_WC => Some(Box::new(NoPeekBot { weights: w, worst_case: true })),
+        SEARCH_SHIPPED => Some(Box::new(SearchBot {
+            weights: w,
+            depth: crate::search::MUNCH_SINGLES_DEPTH,
+            peek: true,
+            mixed: cfg.search_mixed,
+            opts: crate::search::MUNCH_SINGLES,
+            window: [None; 6],
+            window_at: 0,
+        })),
         SEARCH_D1 | SEARCH_D2 => Some(Box::new(SearchBot {
             weights: w,
             depth: if name == SEARCH_D1 { 1 } else { 2 },

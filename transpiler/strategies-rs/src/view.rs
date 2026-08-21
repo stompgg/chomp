@@ -74,6 +74,17 @@ pub fn switch_flag(sim: &mut Sim, seat: Seat, bk: B256) -> u8 {
     }
 }
 
+/// winnerIndex at `key`, seat-mapped (2 = still running). The engine refuses to execute a
+/// finished battle, so a search node has to test this before forking one.
+pub fn winner_index(sim: &mut Sim, bk: B256, seat: Seat) -> u8 {
+    let w = sim.world.Engine.battleData.get(&bk).winnerIndex;
+    if seat.flipped() && w < 2 {
+        1 - w
+    } else {
+        w
+    }
+}
+
 /// Virtual [opp active, cpu active] — active indices off getBattleContext, seat-swapped.
 pub fn active_mon_indices(sim: &mut Sim, seat: Seat, bk: B256) -> (usize, usize) {
     let ctx = Engine::getBattleContext(&mut sim.world, bk);

@@ -66,8 +66,19 @@ function uintWidth(t: string): number {
   return w;
 }
 
+// Effect-hook payloads are overwhelmingly small non-negative words (player/mon indices, enum
+// ordinals, small deltas), and each one otherwise pays BigInt boxing + toString + padStart. A
+// table of the first 256 encoded 256-bit words answers those without allocating.
+const PAD256_SMALL: string[] = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(64, '0'),
+);
+
 /** `v` as a two's-complement `bits`-wide unpadded hex string. */
 function padUint(v: bigint | number, bits: number): string {
+  if (bits === 256 && v >= 0 && v < 256) {
+    const n = Number(v);
+    if (Number.isInteger(n)) return PAD256_SMALL[n];
+  }
   return BigInt.asUintN(bits, BigInt(v)).toString(16).padStart(bits >> 2, '0');
 }
 
@@ -500,6 +511,9 @@ export function runNested<T>(fn: () => T): T {
   }
 }
 
+/** `'_'` — the internal-method prefix, compared by code point rather than `startsWith`. */
+const UNDERSCORE = 95;
+
 /** True if any attached observer wants to capture this internal method. */
 function _captureInternal(method: string): boolean {
   const obs = currentCall.observers;
@@ -774,6 +788,10 @@ export abstract class Contract {
       }
       return undefined;
     };
+    // Method wrappers close over (propStr, value, self, className) — all stable for a given
+    // prop, so they are made once instead of per access. `fn` guards the entry against a method
+    // being swapped on the instance (the CPU search shims `_freeStorageKey` this way).
+    const wrapCache = new Map<string, { fn: Function; wrapped: Function }>();
     const proxy = new Proxy(this, {
       // Ensure property writes through the proxy go to the target (not the proxy object).
       // This is critical because external calls use `this = proxy` inside methods,
@@ -800,26 +818,32 @@ export abstract class Contract {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
         if (typeof prop === 'symbol') return value;
-        // Wrap state variable objects in deep observation proxy for nested tracking,
-        // gated on the same single signal as entry creation: an observer is attached.
-        if (typeof value !== 'function' && value !== null && typeof value === 'object'
-            && currentCall.observers.length > 0) {
-          const stateVars = (self.constructor as any).__stateVars as Set<string> | undefined;
-          if (stateVars?.has(prop as string)) {
-            return _wrapForStateTracking(value, className, prop as string);
+        // One read of the observation signal serves both branches below — this trap is the
+        // hottest path in a forked search, where nothing is ever attached.
+        const observed = currentCall.observers.length > 0;
+        if (typeof value !== 'function') {
+          // State variable objects only need the deep tracking proxy while an observer is attached.
+          if (observed && value !== null && typeof value === 'object') {
+            const stateVars = (self.constructor as any).__stateVars as Set<string> | undefined;
+            if (stateVars?.has(prop as string)) {
+              return _wrapForStateTracking(value, className, prop as string);
+            }
           }
+          return value;
         }
-        if (typeof value !== 'function') return value;
         const propStr = prop as string;
 
         // Internal/library (`_`) methods never change msg.sender or depth, so they
         // only need the wrapper when an observer wants to capture them; else fast-path
         // the raw fn (the historical no-wrap path).
-        if (propStr.startsWith('_') && !_captureInternal(propStr)) {
+        if (propStr.charCodeAt(0) === UNDERSCORE && (!observed || !_captureInternal(propStr))) {
           return value;
         }
 
-        return function (this: any, ...callArgs: any[]) {
+        const cached = wrapCache.get(propStr);
+        if (cached !== undefined && cached.fn === value) return cached.wrapped;
+
+        const wrapped = function (this: any, ...callArgs: any[]) {
           const call = currentCall;
 
           // ── SEMANTICS ── a function of call *type* only, identical with or without
@@ -879,6 +903,8 @@ export abstract class Contract {
             }
           }
         };
+        wrapCache.set(propStr, { fn: value, wrapped });
+        return wrapped;
       },
     });
     this._proxy = proxy;

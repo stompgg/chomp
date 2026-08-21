@@ -55,7 +55,7 @@ fn main() {
         .unwrap_or(Field::None);
     // Blind is the default: simultaneous moves, symmetric seats.
     let info = arg(&args, "--info")
-        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate"))
+        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate | cand"))
         .unwrap_or(InfoMode::Blind);
 
     let chomp_root = std::env::var("CHOMP_ROOT").map(PathBuf::from).unwrap_or_else(|_| {
@@ -125,8 +125,10 @@ fn main() {
             settle_rounds: arg_u(&args, "--settle", 0) as u32,
             opp_streak: 0,
             beam_k: arg_u(&args, "--beam", 0) as usize,
+            guide_actions: arg_u(&args, "--guide", 0) as usize,
             int_actions: arg_u(&args, "--int-actions", 0) as usize,
             int_actions_deep: arg_u(&args, "--int-deep", 0) as usize,
+            rank_capped: args.iter().any(|a| a == "--rank-capped"),
             salt_samples: arg_u(&args, "--salts", 0) as u32,
         };
         let started = std::time::Instant::now();

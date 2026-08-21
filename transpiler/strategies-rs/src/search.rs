@@ -19,9 +19,11 @@ use chomp_rt::B256;
 use crate::evaluator::{score_state, Weights};
 use crate::jsrng::JsRng;
 use crate::sim::{HypoMove, Sim};
+use crate::shared::get_move_base_power;
 use crate::view::{
-    apply_hypothetical_from, calculate_valid_moves, capture_view, mon_current_stamina, switch_flag,
-    BattleView, Mv, Seat, NO_OP_INDEX, VCPU,
+    active_mon_indices, apply_hypothetical_from, calculate_valid_moves, capture_view,
+    mon_current_stamina, move_slot, switch_flag, winner_index, BattleView, Mv, Seat, NO_OP_INDEX,
+    VCPU,
 };
 
 /// Veto: drop rest while stamina-starved under a repeated revealed opponent move —
@@ -42,17 +44,39 @@ pub struct SearchOpts {
     /// Sparse deepening: value every root candidate at depth-1 (the shipped cost), then
     /// deepen only the top `beam_k` at full depth. 0 = full-width.
     pub beam_k: usize,
+    /// Interior cap for the depth-1 GUIDANCE pass that ranks root rows. That pass runs over
+    /// every root row, so it — not the deepened beam — is the floor on think time. 0 = full.
+    pub guide_actions: usize,
     /// Interior-node candidate cap for the deepened phase (rest always kept). 0 = full.
     pub int_actions: usize,
     /// Cap for the DEEPEST interior ply (remaining depth 1). 0 = use `int_actions` —
     /// root-adjacent plies keep the wider list where pivot lines carry the value.
     pub int_actions_deep: usize,
+    /// Rank a capped candidate list by base power instead of loadout order. Off = the
+    /// shipped truncate, which keeps move slot 0 whatever it does.
+    pub rank_capped: bool,
     /// Distinct salts the deepened phase averages each row over. 0/1 = today's single
     /// fixed-salt fork. Only worth >1 under a battlefield field, whose round-end roll is
     /// derived from the turn rng — with one salt the search plans on a stamina/status/drag
     /// outcome it does not actually control.
     pub salt_samples: u32,
 }
+
+/// Depth and shape munch ACTUALLY ships as the Hell tier (`DEFAULT_MAXIMIN_BEAM`). The arena's
+/// default `SearchOpts` is full-width with no beam — an idealized search no player ever faces —
+/// so any claim about the live CPU has to be measured against this, not against that.
+pub const MUNCH_SINGLES_DEPTH: u32 = 3;
+pub const MUNCH_SINGLES: SearchOpts = SearchOpts {
+    vetoes: 0,
+    settle_rounds: 0,
+    opp_streak: 0,
+    beam_k: 2,
+    guide_actions: 0,
+    int_actions: 4,
+    int_actions_deep: 2,
+    rank_capped: true,
+    salt_samples: 0,
+};
 
 /// Hard cap on search depth (ruled 2026-07-12).
 pub const MAX_DEPTH: u32 = 3;
@@ -68,18 +92,49 @@ const SALT: u128 = 0;
 /// (a shared stream would shift every later node's picks when a branch is skipped).
 const ENUM_SEED: u32 = 0x5EED;
 
+/// The action a side falls back to when it must act and has no legal candidate.
+const REST_MV: Mv = Mv { move_index: NO_OP_INDEX, extra_data: 0 };
+
+/// Base power of each candidate move for the seat's active mon. A non-attack decodes to
+/// 0, so status and setup moves sort behind anything that deals damage.
+fn move_base_powers(sim: &mut Sim, seat: Seat, key: B256, moves: &[Mv]) -> Vec<i64> {
+    let (_, active) = active_mon_indices(sim, seat, key);
+    let vp = if seat.flipped() { 1 - VCPU } else { VCPU };
+    moves
+        .iter()
+        .map(|m| {
+            move_slot(sim, seat, key, VCPU, active, m.move_index as usize)
+                .map(|slot| get_move_base_power(sim, key, vp, active, slot))
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
 /// Candidate actions for `seat` at `key`: all moves + all switches + rest, capped at
 /// `cap` (0 = [`MAX_ACTIONS`]). Rest is ALWAYS kept — banking stamina is a real line
-/// (and the opponent model needs it too: greedy/heuristic rest); the cap trims
-/// trailing switches, never moves or rest.
-fn candidates(sim: &mut Sim, seat: Seat, key: B256, cap: usize) -> Vec<Mv> {
+/// (and the opponent model needs it too: greedy/heuristic rest); the cap then trims
+/// trailing switches, and only after those the weakest moves.
+fn candidates(sim: &mut Sim, seat: Seat, key: B256, cap: usize, rank: bool) -> Vec<Mv> {
     let cap = if cap == 0 { MAX_ACTIONS } else { cap.min(MAX_ACTIONS) };
     let mut local = JsRng::new(ENUM_SEED);
     let v = calculate_valid_moves(sim, seat, key, &mut local);
+    let room = cap.saturating_sub(v.no_op.len()).max(1);
+    // Enumeration order is LOADOUT order, so an unranked truncate keeps slot 0 — a heal as
+    // readily as the mon's only KO, and an opponent column that can't reach its damage move
+    // understates the threat this search exists to fear. Rank only when the cap actually
+    // binds, so full-width nodes stay byte-identical; the stable sort keeps slot order on
+    // ties, preserving visit-order independence.
+    let mut moves = v.moves;
+    if rank && moves.len() > room {
+        let bp = move_base_powers(sim, seat, key, &moves);
+        let mut order: Vec<usize> = (0..moves.len()).collect();
+        order.sort_by(|&a, &b| bp[b].cmp(&bp[a]));
+        moves = order.into_iter().map(|i| moves[i]).collect();
+    }
     let mut out: Vec<Mv> = Vec::with_capacity(cap);
-    out.extend(v.moves.iter().copied());
+    out.extend(moves.iter().copied());
     out.extend(v.switches.iter().copied());
-    out.truncate(cap.saturating_sub(v.no_op.len()).max(1));
+    out.truncate(room);
     out.extend(v.no_op.iter().copied());
     out.truncate(cap);
     out
@@ -112,20 +167,26 @@ fn step_salt(sim: &mut Sim, seat: Seat, key: B256, my: Option<Mv>, opp: Option<M
 
 /// The two sides' action lists at `key` given the (virtual) switch flag:
 /// 0 = opp-only acts, 1 = CPU-only acts, 2 = both. A non-acting side is `[None]`.
-fn action_lists(sim: &mut Sim, seat: Seat, key: B256, flag: u8, cap: usize) -> (Vec<Option<Mv>>, Vec<Option<Mv>>) {
+fn action_lists(
+    sim: &mut Sim, seat: Seat, key: B256, flag: u8, cap: usize, rank: bool,
+) -> (Vec<Option<Mv>>, Vec<Option<Mv>>) {
     let my = if flag != 0 {
-        candidates(sim, seat, key, cap).into_iter().map(Some).collect::<Vec<_>>()
+        candidates(sim, seat, key, cap, rank).into_iter().map(Some).collect::<Vec<_>>()
     } else {
         vec![None]
     };
     let opp = if flag != 1 {
         let opp_seat = Seat { cpu: 1 - seat.cpu };
-        candidates(sim, opp_seat, key, cap).into_iter().map(Some).collect::<Vec<_>>()
+        candidates(sim, opp_seat, key, cap, rank).into_iter().map(Some).collect::<Vec<_>>()
     } else {
         vec![None]
     };
-    let my = if my.is_empty() { vec![None] } else { my };
-    let opp = if opp.is_empty() { vec![None] } else { opp };
+    // Reached only for a side the flag says MUST act, so an empty list means "no legal action"
+    // (its last live mon is already the active one and it owes a forced switch with nowhere to
+    // go). Rest is what production falls back to there; `None` means "did not act", which the
+    // engine cannot represent — it handles a zero move word and underflows storedMoveIndex.
+    let my = if my.is_empty() { vec![Some(REST_MV)] } else { my };
+    let opp = if opp.is_empty() { vec![Some(REST_MV)] } else { opp };
     (my, opp)
 }
 
@@ -163,7 +224,7 @@ fn leaf_score(sim: &mut Sim, seat: Seat, key: B256, w: &Weights, settle_rounds: 
 /// interior candidate lists (0 = full width).
 fn value(
     sim: &mut Sim, seat: Seat, key: B256, w: &Weights, depth: u32, settle_rounds: u32, int_cap: usize,
-    int_cap_deep: usize,
+    int_cap_deep: usize, rank: bool,
 ) -> f64 {
     let view = capture_view(sim, seat, key);
     let cpu_alive = view.p1.len() as i64 - (view.cpu_ko & 0xff).count_ones() as i64;
@@ -176,18 +237,24 @@ fn value(
     if cpu_alive <= 0 {
         return LOSS - depth as f64;
     }
+    // The KO counts can lag the engine's own verdict, and `_executeInternal` panics on a battle
+    // it considers finished — so score a decided node here rather than forking one.
+    let winner = winner_index(sim, key, seat);
+    if winner != 2 {
+        return if winner == VCPU { WIN + depth as f64 } else { LOSS - depth as f64 };
+    }
     if depth == 0 {
         return leaf_score(sim, seat, key, w, settle_rounds);
     }
 
     let cap = if depth >= 2 || int_cap_deep == 0 { int_cap } else { int_cap_deep };
-    let (my, opp) = action_lists(sim, seat, key, view.switch_flag, cap);
+    let (my, opp) = action_lists(sim, seat, key, view.switch_flag, cap, rank);
     let mut best = f64::NEG_INFINITY;
     for a in &my {
         let mut worst = f64::INFINITY;
         for o in &opp {
             let child = step(sim, seat, key, *a, *o);
-            let v = value(sim, seat, child, w, depth - 1, settle_rounds, int_cap, int_cap_deep);
+            let v = value(sim, seat, child, w, depth - 1, settle_rounds, int_cap, int_cap_deep, rank);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;
@@ -291,6 +358,9 @@ pub fn decide_with(
     match catch_unwind(AssertUnwindSafe(|| decide_inner(sim, seat, view, pm, w, depth, peek, mixed, rng, opts))) {
         Ok(mv) => mv,
         Err(_) => {
+            // The panic escaped mid-`_executeInternal`, so its trailing reset never ran; clear the
+            // write-gates here or the next decide inherits a dirty world.
+            sim.world.reset_transient();
             sim.set_fork_counter(saved_fc);
             fallback(sim, seat, view, rng)
         }
@@ -312,14 +382,14 @@ fn decide_inner(
         return Mv { move_index: NO_OP_INDEX, extra_data: 0 };
     }
 
-    let (my, opp_full) = action_lists(sim, seat, key, view.switch_flag, 0);
+    let (my, opp_full) = action_lists(sim, seat, key, view.switch_flag, 0, opts.rank_capped);
     let my = apply_vetoes(sim, seat, view, my, opts);
     // Peek-at-root: the opponent's move IS revealed this turn (`pm`) → best-respond to it (a single
     // opponent action), maximin only deeper. Without peek, the full no-peek grid at the root too.
     let opp = if peek && view.switch_flag != 1 { vec![Some(pm)] } else { opp_full };
 
-    // Sparse deepening: guidance-value every root row at depth-1 (full-width interiors, no
-    // settlement — the shipped search's exact cost), then re-value only the top `beam_k`
+    // Sparse deepening: guidance-value every root row at depth-1 (interiors capped by
+    // `guide_actions`, no settlement), then re-value only the top `beam_k`
     // rows at full depth with lean interiors + settlement. The guidance argmax is always
     // in the beam, and the final pick is the argmax among deepened rows only.
     if opts.beam_k > 0 && depth >= 2 && !mixed {
@@ -328,7 +398,7 @@ fn decide_inner(
             let mut worst = f64::INFINITY;
             for o in &opp {
                 let child = step(sim, seat, key, *a, *o);
-                let v = value(sim, seat, child, w, depth - 2, 0, 0, 0);
+                let v = value(sim, seat, child, w, depth - 2, 0, opts.guide_actions, 0, opts.rank_capped);
                 sim.dispose_fork(child);
                 if v < worst {
                     worst = v;
@@ -350,7 +420,10 @@ fn decide_inner(
                 let mut acc = 0.0f64;
                 for s in 0..samples {
                     let child = step_salt(sim, seat, key, my[i], *o, sample_salt(s));
-                    acc += value(sim, seat, child, w, depth - 1, opts.settle_rounds, opts.int_actions, opts.int_actions_deep);
+                    acc += value(
+                        sim, seat, child, w, depth - 1, opts.settle_rounds,
+                        opts.int_actions, opts.int_actions_deep, opts.rank_capped,
+                    );
                     sim.dispose_fork(child);
                 }
                 let v = acc / samples as f64;
@@ -378,7 +451,7 @@ fn decide_inner(
         for (i, a) in my.iter().enumerate() {
             for (j, o) in opp.iter().enumerate() {
                 let child = step(sim, seat, key, *a, *o);
-                grid[i][j] = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0);
+                grid[i][j] = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0, opts.rank_capped);
                 sim.dispose_fork(child);
             }
         }
@@ -403,7 +476,7 @@ fn decide_inner(
         let mut worst = f64::INFINITY;
         for o in &opp {
             let child = step(sim, seat, key, *a, *o);
-            let v = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0);
+            let v = value(sim, seat, child, w, depth - 1, opts.settle_rounds, 0, 0, opts.rank_capped);
             sim.dispose_fork(child);
             if v < worst {
                 worst = v;

@@ -87,7 +87,7 @@ fn main() {
     let default_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let threads = arg_u(&args, "--threads", default_threads as u64) as usize;
     let info = arg(&args, "--info")
-        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate"))
+        .map(|v| InfoMode::parse(&v).expect("--info: blind | rotate | cand"))
         .unwrap_or(InfoMode::Blind);
 
     let chomp_root = std::env::var("CHOMP_ROOT").map(PathBuf::from).unwrap_or_else(|_| {

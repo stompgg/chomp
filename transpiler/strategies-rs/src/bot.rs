@@ -25,6 +25,11 @@ pub enum InfoMode {
     /// One seat sees the reveal, alternating per game so that over a batch
     /// each seat peeks equally often.
     RotatePeek,
+    /// The pair's FIRST-listed seat peeks in every game — for `bench` that is the
+    /// candidate, which is how munch actually ships: the human commits, then the CPU
+    /// replies to the revealed move. Deliberately asymmetric; `RotatePeek` halves that
+    /// edge away and understates the live CPU.
+    CandPeek,
 }
 
 impl InfoMode {
@@ -32,6 +37,7 @@ impl InfoMode {
         match name {
             "blind" => Some(InfoMode::Blind),
             "rotate" | "peek" => Some(InfoMode::RotatePeek),
+            "cand" | "shipped" => Some(InfoMode::CandPeek),
             _ => None,
         }
     }
@@ -40,6 +46,7 @@ impl InfoMode {
         match self {
             InfoMode::Blind => "blind",
             InfoMode::RotatePeek => "rotate-peek",
+            InfoMode::CandPeek => "cand-peek",
         }
     }
 }

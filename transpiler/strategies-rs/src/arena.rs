@@ -5,6 +5,7 @@
 use chomp_engine::Structs::Mon;
 use crate::doubles::{run_doubles_games, Difficulty, DoublesEvalW, DoublesSpec};
 use crate::bot::InfoMode;
+use crate::bots;
 use crate::evaluator::{Weights, DEFAULT_WEIGHTS};
 use crate::game::{run_games, GameSpec, BotName};
 use crate::sim::Field;
@@ -66,6 +67,8 @@ pub fn apply_info_mode(specs: &mut [GameSpec], pair_of: &[usize], mode: InfoMode
     for (i, spec) in specs.iter_mut().enumerate() {
         spec.peek_seat = match mode {
             InfoMode::Blind => None,
+            // pair 0 seats the first-listed strategy at p1, pair 1 at p0.
+            InfoMode::CandPeek => Some(if pair_of.get(i).copied().unwrap_or(0) == 0 { 1 } else { 0 }),
             InfoMode::RotatePeek => {
                 let pair = pair_of.get(i).copied().unwrap_or(0);
                 let n = seen.entry(pair).or_insert(0);
@@ -648,6 +651,56 @@ impl BenchRow {
         let p = self.win_rate();
         1.96 * (p * (1.0 - p) / decisive).sqrt()
     }
+}
+
+/// Head-to-head between two SHAPES of the same search: identical depth, weights and peek,
+/// differing only in [`SearchOpts`]. Answers "does the cheaper shape hold its strength".
+///
+/// Both levers rotate independently — the candidate's seat on `(i >> 1) & 1`, the peek seat on
+/// `i & 1` — so across each run of four specs every (seat, peek) combination appears once. Sharing
+/// one parity between them would pin the candidate to a fixed side of the reveal, which is the
+/// whole thing the peek asymmetry makes it easy to get wrong.
+pub fn shape_ab_winrate(
+    roster: &Roster,
+    depth: u32,
+    cand_opts: crate::search::SearchOpts,
+    base_opts: crate::search::SearchOpts,
+    games: usize,
+    wseed: u32,
+    seed_base: u32,
+    threads: usize,
+    field: Field,
+) -> BenchRow {
+    let book = roster::address_book();
+    let pairs = [(bots::SEARCH, bots::SEARCH)];
+    let (mut specs, _) = build_specs_full(roster, games, wseed, seed_base, &pairs, false, field);
+    let mut cand_seats: Vec<u8> = Vec::with_capacity(specs.len());
+    for (i, spec) in specs.iter_mut().enumerate() {
+        let cand_seat = ((i >> 1) & 1) as u8;
+        spec.peek_seat = Some((i & 1) as u8);
+        spec.p0_search_depth = depth;
+        spec.p1_search_depth = depth;
+        spec.p0_search_peek = true;
+        spec.p1_search_peek = true;
+        spec.p0_weights = DEFAULT_WEIGHTS;
+        spec.p1_weights = DEFAULT_WEIGHTS;
+        let (p0, p1) = if cand_seat == 1 { (base_opts, cand_opts) } else { (cand_opts, base_opts) };
+        spec.p0_search_opts = p0;
+        spec.p1_search_opts = p1;
+        cand_seats.push(cand_seat);
+    }
+    let outcomes = run_games(&specs, &book, threads, false);
+    let mut row = BenchRow { opponent: "shipped", games: 0, drafts: 0, wins: 0, losses: 0, draws: 0 };
+    for (i, outcome) in outcomes.iter().enumerate() {
+        row.games += 1;
+        row.drafts += 1;
+        match outcome.as_ref().ok().and_then(|o| o.winner_seat) {
+            Some(sd) if sd == cand_seats[i] => row.wins += 1,
+            Some(_) => row.losses += 1,
+            None => row.draws += 1,
+        }
+    }
+    row
 }
 
 /// Score `cand` against every opponent in `ladder` (singles).
