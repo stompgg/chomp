@@ -28,6 +28,7 @@ stackAllocation = true
 # comparable gas numbers: keep the default profile for snapshots and final benchmarks.
 # Separate artifacts preserve both caches when switching profiles.
 [profile.fast]
+solc = 'solar'
 out = 'out-fast'
 cache_path = 'cache-fast'
 optimizer = false

@@ -25,8 +25,9 @@ FOUNDRY_PROFILE=fast forge test -vvv      # Run tests with verbose output
 ```
 
 Engine edits invalidate most of the production-profile dependency graph. For correctness-only
-iteration, use the separate fast profile and a narrow path; it keeps via-IR (required by Engine)
-but disables optimization/build-info, enables sparse compilation, and uses a separate cache:
+iteration, use the separate fast profile and a narrow path; it compiles with solar (bundled with
+Foundry), keeps via-IR, disables optimization/build-info, enables sparse compilation, and uses a
+separate cache. The default profile stays on solc for gas snapshots and deployment:
 
 ```bash
 FOUNDRY_PROFILE=fast forge test --match-path test/EngineTest.sol
