@@ -278,12 +278,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _clearMonStates(config.p1States, prevP1Size);
 
         // Store the battle config (update fields individually to preserve effects mapping slots).
-        // Writes are grouped by storage slot with no calls in between so via-IR coalesces each
-        // group into one read-modify-write: slot 0 = packedP0EffectsCount + rngOracle, slot 1 =
-        // rngOracle + packedP1EffectsCount. Slot 2's many fields (moveManager, koBitmaps,
-        // teamSizes, ...) are deferred to ONE consolidated block after the last external call —
-        // the getTeams/ruleset/hook calls are storage barriers that would otherwise split them
-        // into ~6 separate RMWs.
+        // Slot 0's many fields (moveManager, koBitmaps, teamSizes, ...) are deferred to ONE
+        // consolidated block after the last external call — the getTeams/ruleset/hook calls are
+        // storage barriers that would otherwise split them into ~6 separate RMWs.
         config.packedP0EffectsCount = 0;
         if (address(config.rngOracle) != address(battle.rngOracle)) {
             config.rngOracle = battle.rngOracle;
@@ -350,7 +347,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Team sizes (packed: lower 4 bits = p0, upper 4 bits = p1) — written with the
-        // consolidated slot-2 block below.
+        // consolidated slot-0 block below.
         uint256 p0Len = p0Team.length;
         uint256 p1Len = p1Team.length;
         uint8 newTeamSizes = uint8(p0Len) | (uint8(p1Len) << 4);
@@ -418,8 +415,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
         }
 
-        // --- Consolidated BattleConfig slot-2 write ---
-        // Every slot-2 field lands here in one contiguous run with no external calls in between,
+        // --- Consolidated BattleConfig slot-0 write ---
+        // Every slot-0 field lands here in one contiguous run with no external calls in between,
         // so via-IR coalesces them into a single read-modify-write (they previously cost ~6
         // separate RMWs split across the getTeams/ruleset/hook call barriers). Placed BEFORE
         // validateGameStart and the OnBattleStart hooks so everything an external contract can
@@ -438,7 +435,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.globalEffectsLength = newGlobalEffectsLength;
         config.engineHooksLength = uint8(numHooks);
         config.startTimestamp = uint40(block.timestamp);
-        // --- Consolidated slot-3 write (salts + hook step union + mode) ---
+        // --- Salts, hook step union and mode ---
         // Salts are only written by the legacy setMove storage path and never cleared at game
         // over; reset them so a recycled key cannot leak the previous battle's salts in.
         // battleMode must likewise be rewritten every battle (recycled storage).
@@ -1201,7 +1198,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint16 hookStepsUnion = config.engineHookStepsUnion;
         // Read the mode ADJACENT to the union load (same slot, no call barrier between) so
         // via-IR merges the two into one SLOAD; the hook loop below is a storage barrier that
-        // would otherwise force a second slot-3 read for the gate.
+        // would otherwise force a second slot-0 read for the gate.
         uint8 battleMode = config.battleMode;
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
             uint256 numHooks = config.engineHooksLength;
@@ -1607,7 +1604,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      right effect loop: singles derives the mon from the side's active lane (legacy
     ///      behavior); 2-slot battles run the state-changed mon's own list, keeping the caller's
     ///      count gate and the iterated list consistent. Only reached when a listener exists —
-    ///      the mode read is a warm slot-3 SLOAD on that rare path.
+    ///      the mode read is a warm slot-0 SLOAD on that rare path.
     function _runEffectsPipeline(
         BattleConfig storage config,
         uint256 playerIndex,
