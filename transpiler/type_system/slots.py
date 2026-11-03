@@ -292,6 +292,24 @@ def discover_slot_layouts(
     return layouts
 
 
+def slot_at(
+    struct: StructDefinition,
+    index: int,
+    *,
+    enum_names: Set[str],
+    struct_names: Set[str],
+    structs: Optional[Dict[str, StructDefinition]] = None,
+) -> Optional[SlotLayout]:
+    """The layout of the slot `index` words past `<place>.slot`, or None if unknown."""
+    layouts = struct_slots(
+        struct, enum_names=enum_names, struct_names=struct_names, structs=structs
+    )
+    for layout in layouts:
+        if layout.index == index:
+            return layout
+    return None
+
+
 def slot_zero(
     struct: StructDefinition,
     *,
@@ -300,10 +318,4 @@ def slot_zero(
     structs: Optional[Dict[str, StructDefinition]] = None,
 ) -> Optional[SlotLayout]:
     """The base slot a `<place>.slot` expression addresses, or None if unknown."""
-    layouts = struct_slots(
-        struct, enum_names=enum_names, struct_names=struct_names, structs=structs
-    )
-    for layout in layouts:
-        if layout.index == 0:
-            return layout
-    return None
+    return slot_at(struct, 0, enum_names=enum_names, struct_names=struct_names, structs=structs)

@@ -116,6 +116,11 @@ contract MainnetReplayGasTest is
     uint256[4] P0_IDS = [uint256(1), 5, 7, 6]; // Inutia, Sofabbi, Embursa, Pengym
     uint256[4] P1_IDS = [uint256(5), 7, 4, 7]; // Sofabbi, Embursa, Gorillax, Embursa
 
+    // Tinderclaws hashes address(this) into its self-burn roll, so it must run at the address
+    // that played this game (the 2026-07-14 deployment).
+    uint256 constant EMBURSA_ID = 7;
+    address constant MAINNET_TINDERCLAWS = 0x5856b784dF1C4B70f03260aa405D856761d2feD3;
+
     function setUp() public {
         p0 = vm.addr(P0_PK);
         p1 = vm.addr(P1_PK);
@@ -156,6 +161,8 @@ contract MainnetReplayGasTest is
         deployVolthare(gachaReg);
         deployAurox(gachaReg);
         deployXmon(gachaReg);
+        (,, uint256[] memory embursaAbilities) = gachaReg.getMonData(EMBURSA_ID);
+        vm.etch(MAINNET_TINDERCLAWS, address(uint160(embursaAbilities[0])).code);
         mgr = new SignedCommitManager(IEngine(address(engine)));
         maker = new SignedMatchmaker(engine);
         registry = new TestTeamRegistry();
@@ -165,7 +172,11 @@ contract MainnetReplayGasTest is
         team = new Mon[](4);
         for (uint256 i; i < 4; i++) {
             (, uint256[] memory moves, uint256[] memory abilities) = gachaReg.getMonData(ids[i]);
-            team[i] = Mon({stats: logStats[i], ability: abilities.length > 0 ? abilities[0] : 0, moves: moves});
+            uint256 ability = abilities.length > 0 ? abilities[0] : 0;
+            if (ids[i] == EMBURSA_ID) {
+                ability = ((ability >> 160) << 160) | uint256(uint160(MAINNET_TINDERCLAWS));
+            }
+            team[i] = Mon({stats: logStats[i], ability: ability, moves: moves});
         }
     }
 
@@ -862,6 +873,31 @@ contract MainnetReplayGasTest is
         console.log("  floor per no-op turn (t25/25)      :", perTurn);
         console.log("  per-batch fixed (t1 - floor)       :", t1 - perTurn);
         console.log("  whole no-op game, 1 batch of 27    :", t27);
+    }
+
+    /// @dev The same game at per-transaction prices: every turn pays its own first-touch storage cost,
+    ///      which is what a PvP game costs and a single batch hides.
+    function test_mainnetReplay_perTurnTx() public {
+        vm.warp(vm.getBlockTimestamp() + 1);
+        bytes32 key1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _replayOneTx(key1, false);
+
+        bytes32 key2 = _startBattle();
+        require(engine.getStorageKey(key1) == engine.getStorageKey(key2), "storageKey must be reused");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256[] memory entries = _entries();
+        uint256[] memory one = new uint256[](1);
+        uint256 total;
+        for (uint256 i; i < entries.length; ++i) {
+            one[0] = entries[i];
+            vm.cool(address(engine));
+            total += _execBatch(key2, one);
+        }
+        require(engine.getWinner(key2) != address(0), "per-turn replay must reach game over");
+
+        vm.snapshotValue("MainnetReplay_PerTurnTx_rawGas", total);
+        console.log("PER-TURN replay (one tx per turn) rawGas :", total);
     }
 
     function test_mainnetReplay_batchedExecute() public {

@@ -278,12 +278,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         _clearMonStates(config.p1States, prevP1Size);
 
         // Store the battle config (update fields individually to preserve effects mapping slots).
-        // Writes are grouped by storage slot with no calls in between so via-IR coalesces each
-        // group into one read-modify-write: slot 0 = packedP0EffectsCount + rngOracle, slot 1 =
-        // rngOracle + packedP1EffectsCount. Slot 2's many fields (moveManager, koBitmaps,
-        // teamSizes, ...) are deferred to ONE consolidated block after the last external call —
-        // the getTeams/ruleset/hook calls are storage barriers that would otherwise split them
-        // into ~6 separate RMWs.
+        // Slot 0's many fields (moveManager, koBitmaps, teamSizes, ...) are deferred to ONE
+        // consolidated block after the last external call — the getTeams/ruleset/hook calls are
+        // storage barriers that would otherwise split them into ~6 separate RMWs.
         config.packedP0EffectsCount = 0;
         if (address(config.rngOracle) != address(battle.rngOracle)) {
             config.rngOracle = battle.rngOracle;
@@ -350,7 +347,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
 
         // Team sizes (packed: lower 4 bits = p0, upper 4 bits = p1) — written with the
-        // consolidated slot-2 block below.
+        // consolidated slot-0 block below.
         uint256 p0Len = p0Team.length;
         uint256 p1Len = p1Team.length;
         uint8 newTeamSizes = uint8(p0Len) | (uint8(p1Len) << 4);
@@ -418,8 +415,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
         }
 
-        // --- Consolidated BattleConfig slot-2 write ---
-        // Every slot-2 field lands here in one contiguous run with no external calls in between,
+        // --- Consolidated BattleConfig slot-0 write ---
+        // Every slot-0 field lands here in one contiguous run with no external calls in between,
         // so via-IR coalesces them into a single read-modify-write (they previously cost ~6
         // separate RMWs split across the getTeams/ruleset/hook call barriers). Placed BEFORE
         // validateGameStart and the OnBattleStart hooks so everything an external contract can
@@ -433,17 +430,17 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.globalKVCount = 0;
         config.p0BoostCounts = 0;
         config.teamSizes = newTeamSizes;
-        config.inlineRegenFlags = newRegenFlags;
+        config.inlineRegenFlags =
+            address(battle.rngOracle) == address(0) ? newRegenFlags : newRegenFlags | RNG_ORACLE_FLAG;
         config.globalEffectsLength = newGlobalEffectsLength;
         config.engineHooksLength = uint8(numHooks);
         config.startTimestamp = uint40(block.timestamp);
-        // --- Consolidated slot-3 write (salts + both step unions + mode) ---
+        // --- Salts, hook step union and mode ---
         // Salts are only written by the legacy setMove storage path and never cleared at game
         // over; reset them so a recycled key cannot leak the previous battle's salts in.
         // battleMode must likewise be rewritten every battle (recycled storage).
         config.p0Salt = 0;
         config.p1Salt = 0;
-        config.playerEffectStepsUnion = 0;
         config.engineHookStepsUnion = hookStepsUnion;
         config.battleMode = battleMode;
         config.monStatusLanes = 0;
@@ -574,6 +571,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
+        BattleData storage battle = battleData[battleKey];
         for (uint256 i = 0; i < entries.length; i++) {
             uint256 entry = entries[i];
             uint8 p0Move = uint8(entry);
@@ -584,7 +582,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint104 p1Salt = uint104(entry >> 152);
 
             // Live flag read (direct storage, warm after the first sub-turn).
-            uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+            uint8 flag = battle.playerSwitchForTurnFlag;
             if (flag == 2) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
@@ -1146,6 +1144,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev Allocation-free current-turn lane with the same transient/storage fallback as
     ///      _getCurrentTurnMove. Used to build fresh external hook context.
+    /// @custom:solar-inline always
     function _currentTurnMoveWord(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
         uint256 encoded = (playerIndex == 0 ? _turnP0Packed : _turnP1Packed) >> 104;
         if (encoded != 0) {
@@ -1199,7 +1198,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint16 hookStepsUnion = config.engineHookStepsUnion;
         // Read the mode ADJACENT to the union load (same slot, no call barrier between) so
         // via-IR merges the two into one SLOAD; the hook loop below is a storage barrier that
-        // would otherwise force a second slot-3 read for the gate.
+        // would otherwise force a second slot-0 read for the gate.
         uint8 battleMode = config.battleMode;
         if ((hookStepsUnion & (1 << uint8(EngineHookStep.OnRoundStart))) != 0) {
             uint256 numHooks = config.engineHooksLength;
@@ -1301,15 +1300,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 rng;
             uint104 p0TurnSalt = p0Packed != 0 ? uint104(p0Packed) : config.p0Salt;
             uint104 p1TurnSalt = p1Packed != 0 ? uint104(p1Packed) : config.p1Salt;
-            if (address(config.rngOracle) == address(0)) {
+            // Read once: the flag also says whether rng needs the oracle's cold slot.
+            uint8 inlineRegenFlags = config.inlineRegenFlags;
+            if (inlineRegenFlags & RNG_ORACLE_FLAG == 0) {
                 rng = uint256(keccak256(abi.encode(p0TurnSalt, p1TurnSalt)));
             } else {
                 rng = config.rngOracle.getRNG(bytes32(uint256(p0TurnSalt)), bytes32(uint256(p1TurnSalt)));
             }
             tempRNG = rng;
-
-            // Cache `inlineRegenFlags` once instead of re-reading config slot 2 three times below.
-            uint8 inlineRegenFlags = config.inlineRegenFlags;
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
@@ -1318,95 +1316,29 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Run beginning of round effects. Skip the global-list call when there are no global
             // effects (the inline-regen prod default keeps globalEffectsLength == 0), and skip the
-            // per-player calls when no effect anywhere listens at RoundStart (union bit clear) — both
+            // per-player calls when no effect anywhere listens at RoundStart — both
             // avoid the _handleEffects call + its winnerIndex/koOccurredFlag bookkeeping when there is
             // provably nothing to run. Ordering (global, priority, other) is preserved.
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    2,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag = _runRoundPhase(
+                config,
+                battle,
+                rng,
+                priorityPlayerIndex,
+                otherPlayerIndex,
+                EffectStep.RoundStart,
+                playerSwitchForTurnFlag
+            );
 
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
-            actedSlotsThisTurnMask |= 1 << (priorityPlayerIndex << 1);
+            actedSlotsThisTurnMask = 1 << (priorityPlayerIndex << 1);
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
 
-            // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s).
-            // Union re-read here (not cached from RoundStart): the move just executed may have added an
-            // effect that listens at AfterMove.
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Always run the global effect's afterMove hook(s)
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    priorityPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Stamina regen decision is encapsulated in _inlineStaminaRegen, which reads the move FRESH
-            // — required because effects (SleepStatus) can rewrite the move to a resting NO_OP mid-turn.
-            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
-                playerSwitchForTurnFlag = _inlineStaminaRegen(
-                    config,
-                    EffectStep.AfterMove,
-                    priorityPlayerIndex,
-                    _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex),
-                    0,
-                    0,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag =
+                _runAfterMovePhase(config, battle, rng, priorityPlayerIndex, inlineRegenFlags, playerSwitchForTurnFlag);
 
             // Run the non priority player's move
-            actedSlotsThisTurnMask |= 1 << (otherPlayerIndex << 1);
+            actedSlotsThisTurnMask = SINGLES_ALL_SLOTS_ACTED;
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
@@ -1430,94 +1362,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s).
-            // Union re-read: the non-priority move just executed may have added an AfterMove listener.
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag =
+                _runAfterMovePhase(config, battle, rng, otherPlayerIndex, inlineRegenFlags, playerSwitchForTurnFlag);
 
-            // Always run the global effect's afterMove hook(s)
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    otherPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
-                playerSwitchForTurnFlag = _inlineStaminaRegen(
-                    config,
-                    EffectStep.AfterMove,
-                    otherPlayerIndex,
-                    _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex),
-                    0,
-                    0,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Round-end effects. Same guard shape as RoundStart: skip the global call with no global
-            // effects, and skip both per-player calls when nothing listens at RoundEnd (union re-read,
-            // since the two moves this turn may have applied a RoundEnd status). Ordering preserved.
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    2,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
-                // If priority mon is not KOed, run roundEnd effects for the priority mon
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-
-                // If non priority mon is not KOed, run roundEnd effects for the non priority mon
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag = _runRoundPhase(
+                config, battle, rng, priorityPlayerIndex, otherPlayerIndex, EffectStep.RoundEnd, playerSwitchForTurnFlag
+            );
 
             if (inlineRegenFlags & INLINE_REGEN_ROUND_END != 0) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-                playerSwitchForTurnFlag =
-                    _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, playerSwitchForTurnFlag);
+                playerSwitchForTurnFlag = _inlineStaminaRegen(
+                    config, battle, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, playerSwitchForTurnFlag
+                );
             }
         }
 
@@ -1747,7 +1604,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      right effect loop: singles derives the mon from the side's active lane (legacy
     ///      behavior); 2-slot battles run the state-changed mon's own list, keeping the caller's
     ///      count gate and the iterated list consistent. Only reached when a listener exists —
-    ///      the mode read is a warm slot-3 SLOAD on that rare path.
+    ///      the mode read is a warm slot-0 SLOAD on that rare path.
     function _runEffectsPipeline(
         BattleConfig storage config,
         uint256 playerIndex,
@@ -1903,17 +1760,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
             if (!removeAfterRun) {
-                // INVARIANT: every player-effect add folds its bitmap into BOTH routing caches here:
-                // the over-approximate battle-wide outer union and this mon's exact lane. A missed
-                // update would silently skip a live hook. This is the sole player-effect add chokepoint
-                // (stat boosts use their own store).
-                // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
+                // INVARIANT: every player-effect add folds its bitmap into this mon's exact lane. A
+                // missed update would silently skip a live hook. This is the sole player-effect add
+                // chokepoint (stat boosts use their own store).
+                // Global effects (targetIndex == 2) are gated by globalEffectsLength instead.
                 if (targetIndex != 2) {
-                    config.playerEffectStepsUnion |= stepsBitmap;
                     uint256 stepLaneShift = _effectStepLaneShift(targetIndex, monIndex);
                     config.playerEffectStepsByMon |= uint256(stepsBitmap) << stepLaneShift;
-                    // Status-lane set: same slot as the union write, so both coalesce into one
-                    // SSTORE. INVARIANT: lane nonzero ⇔ exactly one class-bearing entry on the
+                    // INVARIANT: status lane nonzero ⇔ exactly one class-bearing entry on the
                     // mon; the only clears are _removeEffectAtSlot + startBattle's reset.
                     uint256 statusClass = (stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
                     if (statusClass != 0) {
@@ -2040,10 +1894,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @dev Bit offset of a mon's uint16 exact lifecycle-step union (stride 8/side).
+    /// @custom:solar-inline always
     function _effectStepLaneShift(uint256 targetIndex, uint256 monIndex) private pure returns (uint256) {
         return ((targetIndex << 3) | monIndex) << 4;
     }
 
+    // Bit 0 of each 16-bit lane in playerEffectStepsByMon.
+    uint256 private constant EFFECT_STEP_LANE_ONES = 0x0001000100010001000100010001000100010001000100010001000100010001;
+    uint256 private constant ALL_BOOST_LANES = 0x1F;
     uint16 private constant EFFECT_RESOLVER_METADATA_BIT = uint16(1) << 15;
     uint256 private constant EFFECT_COMPACT_DATA_BITS = 78;
     uint256 private constant EFFECT_COMPACT_DATA_MASK = (uint256(1) << EFFECT_COMPACT_DATA_BITS) - 1;
@@ -2114,6 +1972,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _effectDataAndHookContext(EffectInstance storage effectInstance)
         private
         view
@@ -2129,6 +1988,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         usesResolver = header & EFFECT_RESOLVER_FLAG != 0;
     }
 
+    /// @custom:solar-inline always
     function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
         private
         view
@@ -2137,6 +1997,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return uint16(config.playerEffectStepsByMon >> _effectStepLaneShift(targetIndex, monIndex));
     }
 
+    /// @custom:solar-inline always
+    function _anyMonListensAt(BattleConfig storage config, EffectStep step) private view returns (bool) {
+        return config.playerEffectStepsByMon & (EFFECT_STEP_LANE_ONES << uint8(step)) != 0;
+    }
+
+    /// @custom:solar-inline always
     function _monListensAt(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, EffectStep step)
         private
         view
@@ -2145,6 +2011,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _stepsWordListens(config.playerEffectStepsByMon, targetIndex, monIndex, step);
     }
 
+    /// @custom:solar-inline always
     function _stepsWordListens(uint256 stepsWord, uint256 targetIndex, uint256 monIndex, EffectStep step)
         private
         pure
@@ -2353,10 +2220,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return;
         }
         _setBoostCountOf(config, targetIndex, monIndex, 0);
-
-        // Telescope back to base stats.
-        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
-        _applyBoostedStats(config, targetIndex, monIndex, baseStats, baseStats);
+        _applyBoostLanes(config, targetIndex, monIndex, 0, ALL_BOOST_LANES);
     }
 
     function _getStatBoostBaseStats(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -2375,6 +2239,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // Boost-source store: one packed word per source at slot monIndex * 16 + i (i < the mon's
     // 4-bit count nibble). 15 sources/mon is far above the plausible distinct-caller ceiling.
 
+    /// @custom:solar-inline always
     function _boostWordsOf(BattleConfig storage config, uint256 targetIndex)
         private
         view
@@ -2383,6 +2248,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return targetIndex == 0 ? config.p0BoostWords : config.p1BoostWords;
     }
 
+    /// @custom:solar-inline always
     function _boostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
         private
         view
@@ -2392,6 +2258,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return (packed >> (monIndex * 4)) & 0xF;
     }
 
+    /// @custom:solar-inline always
     function _setBoostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, uint256 newCount)
         private
     {
@@ -2411,43 +2278,29 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint168 key
     ) private {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
         mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
         uint256 count = _boostCountOf(config, targetIndex, monIndex);
         uint256 baseSlot = monIndex * 16;
 
-        // Find an existing same-key/same-permanence source (header-only reads — no lane unpack).
-        bool found;
-        uint256 foundIdx;
-        bytes32 oldWord;
+        // Merge into an existing same-key/same-permanence source if there is one.
         for (uint256 i; i < count; ++i) {
             bytes32 w = words[baseSlot + i];
             (bool wPerm, uint168 wKey) = StatBoostLib.unpackBoostHeader(w);
             if (wKey == key && wPerm == isPerm) {
-                found = true;
-                foundIdx = i;
-                oldWord = w;
-                break;
+                bytes32 merged = StatBoostLib.mergeIntoWord(w, statBoostsToApply);
+                words[baseSlot + i] = merged;
+                _applyBoostLanes(config, targetIndex, monIndex, count, StatBoostLib.laneMask(uint256(w ^ merged)));
+                return;
             }
         }
 
-        bytes32 newWord;
-        if (found) {
-            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) = StatBoostLib.unpackBoostData(oldWord);
-            (uint8[5] memory fp, uint8[5] memory fc, bool[5] memory fm) =
-                StatBoostLib.mergeExistingAndNewBoosts(ep, ec, em, statBoostsToApply);
-            newWord = StatBoostLib.packBoostDataWithArrays(key, isPerm, fp, fc, fm);
-            words[baseSlot + foundIdx] = newWord;
-        } else {
-            if (count == 15) {
-                revert InvalidBattleConfig();
-            }
-            newWord = StatBoostLib.packBoostData(key, isPerm, statBoostsToApply);
-            words[baseSlot + count] = newWord;
-            _setBoostCountOf(config, targetIndex, monIndex, count + 1);
+        if (count == 15) {
+            revert InvalidBattleConfig();
         }
-
-        _applyStatBoostAggregates(config, targetIndex, monIndex, baseStats);
+        bytes32 fresh = StatBoostLib.packFreshWord(key, isPerm, statBoostsToApply);
+        words[baseSlot + count] = fresh;
+        _setBoostCountOf(config, targetIndex, monIndex, count + 1);
+        _applyBoostLanes(config, targetIndex, monIndex, count + 1, StatBoostLib.laneMask(uint256(fresh)));
     }
 
     function _removeStatBoostWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, bool isPerm) private {
@@ -2468,104 +2321,73 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 words[baseSlot + i] = words[baseSlot + last];
             }
             _setBoostCountOf(config, targetIndex, monIndex, last);
-
-            _applyStatBoostAggregates(
-                config, targetIndex, monIndex, _getStatBoostBaseStats(config, targetIndex, monIndex)
-            );
+            _applyBoostLanes(config, targetIndex, monIndex, last, StatBoostLib.laneMask(uint256(w)));
             return;
         }
     }
 
-    /// @dev Recompute the mon's aggregate from its source words (the add/remove scans have
-    ///      already warmed them) and telescope the deltas. The packed accumulator is the exact
-    ///      fast form of the legacy aggregation; on lane overflow the legacy unchecked math is
-    ///      the fallback, so both branches agree with the old accumulator-cache results.
-    function _applyStatBoostAggregates(
-        BattleConfig storage config,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint32[5] memory baseStats
-    ) private {
-        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
-        uint256 count = _boostCountOf(config, targetIndex, monIndex);
-        uint256 baseSlot = monIndex * 16;
-        uint256 acc;
-        bool ok = true;
-        for (uint256 i; i < count && ok; ++i) {
-            (acc, ok) = StatBoostLib.applyWordToAcc(acc, words[baseSlot + i], baseStats, true);
+    /// @dev Boosted value of stat lane k across the mon's `count` sources.
+    /// @custom:solar-inline always
+    function _boostedLane(
+        mapping(uint256 => bytes32) storage words,
+        uint256 baseSlot,
+        uint256 count,
+        uint256 k,
+        uint32 base
+    ) private view returns (uint32) {
+        uint256 num = base;
+        uint256 total;
+        for (uint256 i; i < count; ++i) {
+            (num, total) = StatBoostLib.foldLane(num, total, words[baseSlot + i], k);
         }
-        uint32[5] memory newBoostedStats;
-        if (ok) {
-            newBoostedStats = StatBoostLib.finalizeAccStats(acc, baseStats);
-        } else {
-            uint32[5] memory numBoostsPerStat;
-            uint256[5] memory accumulatedNumeratorPerStat;
-            for (uint256 i; i < count; ++i) {
-                (,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
-                    StatBoostLib.unpackBoostData(words[baseSlot + i]);
-                StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
-            }
-            newBoostedStats =
-                StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
-        }
-        _applyBoostedStats(config, targetIndex, monIndex, baseStats, newBoostedStats);
+        return StatBoostLib.finalizeLane(num, total, base);
     }
 
-    /// @dev Re-apply a mon's aggregated stat boosts by telescoping its monState deltas. The
-    ///      stat-boost system is the sole writer of the 5 stat-delta fields, so the current delta
-    ///      *is* the previous boost contribution (cleared == sentinel == 0): old boosted stat =
-    ///      base + currentDelta. We compute the new boosted stat and feed the difference through
-    ///      _updateMonStateInternal, which fires OnUpdateMonState for listeners exactly as before.
-    ///      No globalKV snapshot is kept — being inside the Engine we read the delta back directly.
-    function _applyBoostedStats(
+    /// @dev Applies a change to the mon's boost sources. Only `lanes` are recomputed: the boost
+    ///      system is the sole writer of these deltas, so every other lane is already current.
+    ///      MonStats and MonState share lane offsets, so one shift addresses both words.
+    function _applyBoostLanes(
         BattleConfig storage config,
         uint256 targetIndex,
         uint256 monIndex,
-        uint32[5] memory baseStats,
-        uint32[5] memory newBoostedStats
+        uint256 count,
+        uint256 lanes
     ) private {
-        MonState storage st = _getMonState(config, targetIndex, monIndex);
-
-        // Listener gate hoisted ONCE per apply (was paid inside _updateMonStateInternal per stat).
-        // OnUpdateMonState has a single listener game-wide, so the common case takes the direct-
-        // write path: the stat-boost system is the sole writer of these 5 deltas (updateMonState
-        // reverts StatRequiresStatBoost for them), so the stored delta after any telescoped op is
-        // exactly newBoosted - base — writing that directly is bit-identical to the dispatcher's
-        // sentinel-aware add, minus its 2 TLOADs + 2 mapping keccaks + enum chain per stat.
+        // Listeners can reenter, so they keep the compute-all-then-apply order.
         if (_monListensAt(config, targetIndex, monIndex, EffectStep.OnUpdateMonState)) {
-            for (uint256 i; i < 5; ++i) {
-                // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
-                int32 valueToAdd = int32(newBoostedStats[i]) - int32(baseStats[i]) - _statBoostCurrentDelta(st, i);
-                if (valueToAdd != 0) {
-                    _updateMonStateInternal(
-                        targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd
-                    );
-                }
-            }
+            _applyBoostsWithListeners(config, targetIndex, monIndex, count);
             return;
         }
 
-        // Direct path: one read-modify-write of the packed MonState word for all five lanes.
-        // Lane offsets follow the MonState layout (hp 0, stamina 32, speed 64, attack 96,
-        // defence 128, spAtk 160, spDef 192); boost index 4 is speed, 0-3 map to attack..spDef.
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 baseSlot = monIndex * 16;
+        MonStats storage stats = _getTeamMon(config, targetIndex, monIndex).stats;
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
+        uint256 statsWord;
         uint256 word;
         assembly ("memory-safe") {
+            statsWord := sload(stats.slot)
             word := sload(st.slot)
         }
         uint256 original = word;
         bool speedChanged;
-        for (uint256 i; i < 5; ++i) {
-            uint256 shift = i == 4 ? 64 : 96 + (i << 5);
+        for (uint256 k; k < 5; ++k) {
+            if ((lanes >> k) & 1 == 0) {
+                continue;
+            }
+            // Boost index 4 is speed; 0-3 map to attack..spDef.
+            uint256 shift = k == 4 ? 64 : 96 + (k << 5);
+            uint32 base = uint32(statsWord >> shift);
             int32 current = int32(uint32(word >> shift));
             if (current == CLEARED_MON_STATE_SENTINEL) {
                 current = 0;
             }
-            int32 newDelta = int32(newBoostedStats[i]) - int32(baseStats[i]);
+            int32 newDelta = int32(_boostedLane(words, baseSlot, count, k, base)) - int32(base);
             if (newDelta == current) {
                 continue;
             }
             word = (word & ~(uint256(0xFFFFFFFF) << shift)) | (uint256(uint32(newDelta)) << shift);
-            if (i == 4) {
+            if (k == 4) {
                 speedChanged = true;
             }
         }
@@ -2575,6 +2397,33 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
             if (speedChanged && config.battleMode != BATTLE_MODE_SINGLES) {
                 _markActiveMonSpeedDirty(targetIndex, monIndex);
+            }
+        }
+    }
+
+    /// @dev Computes all five stats up front, then feeds each difference through
+    ///      _updateMonStateInternal so OnUpdateMonState fires per stat, in lane order.
+    function _applyBoostsWithListeners(
+        BattleConfig storage config,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 count
+    ) private {
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 baseSlot = monIndex * 16;
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        uint32[5] memory boosted;
+        for (uint256 k; k < 5; ++k) {
+            boosted[k] = _boostedLane(words, baseSlot, count, k, baseStats[k]);
+        }
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
+        for (uint256 k; k < 5; ++k) {
+            // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
+            int32 valueToAdd = int32(boosted[k]) - int32(baseStats[k]) - _statBoostCurrentDelta(st, k);
+            if (valueToAdd != 0) {
+                _updateMonStateInternal(
+                    targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(k), valueToAdd
+                );
             }
         }
     }
@@ -2605,6 +2454,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 count = _boostCountOf(config, targetIndex, monIndex);
         uint256 baseSlot = monIndex * 16;
         uint256 kept = count;
+        uint256 expired;
         uint256 i;
         while (i < kept) {
             bytes32 w = words[baseSlot + i];
@@ -2612,6 +2462,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 ++i;
                 continue;
             }
+            expired |= uint256(w);
             --kept;
             if (i != kept) {
                 words[baseSlot + i] = words[baseSlot + kept];
@@ -2621,7 +2472,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return; // nothing expired: no writes, no telescope
         }
         _setBoostCountOf(config, targetIndex, monIndex, kept);
-        _applyStatBoostAggregates(config, targetIndex, monIndex, _getStatBoostBaseStats(config, targetIndex, monIndex));
+        _applyBoostLanes(config, targetIndex, monIndex, kept, StatBoostLib.laneMask(expired));
     }
 
     function setGlobalKV(uint64 key, uint192 value) external {
@@ -2732,7 +2583,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             newDelta = -int32(baseHp); // past fully-dead; the exact magnitude carries no meaning
         }
         monState.hpDelta = newDelta;
-        if (monState.hpDelta + int32(baseHp) <= 0) {
+        if (newDelta + int32(baseHp) <= 0) {
             monState.isKnockedOut = true;
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
@@ -3377,7 +3228,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If so, remove the effect and the extra data.
         // Guard each _runEffects so we don't pay its setup (storage re-resolution + count load) when
         // there's provably nothing to run: the switching mon has no effects (count == 0) or no effect
-        // anywhere listens at this step (union bit clear), and the global list is empty.
+        // anywhere listens at this step, and the global list is empty.
         if (!currentMonState.isKnockedOut) {
             uint256 outCount = playerIndex == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, currentActiveMonIndex)
@@ -3467,7 +3318,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(activesWord, playerIndex);
         MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
-        if (currentMonState.shouldSkipTurn) {
+        bool shouldSkipTurn = currentMonState.shouldSkipTurn;
+        bool isKnockedOut = currentMonState.isKnockedOut;
+        if (shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
             // A forced-switch turn's coerced send-in is not an action the skip flag may eat.
             uint8 storedFlag = uint8(battleWord >> 168);
@@ -3484,7 +3337,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Coerce to a switch when one is required: turn 0 (initial send-in) or active mon KO'd.
         // Target the first non-KO'd slot so the switch always lands
-        if ((turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
+        if ((turnId == 0 || isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
             moveIndex = SWITCH_MOVE_INDEX;
             extraData = uint16(_firstNonKOed(config, playerIndex));
         }
@@ -3742,6 +3595,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _runSingleEffect(
         BattleConfig storage config,
         uint256 rng,
@@ -3828,6 +3682,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _executeEffectHook(
         bytes32 battleKey,
         IEffect effect,
@@ -3925,6 +3780,99 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @dev Global, then priority, then other player's effects for a round step. Lengths and lanes
+    ///      are re-read each phase because moves and effects can add listeners mid-turn.
+    /// @custom:solar-inline always
+    function _runRoundPhase(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rng,
+        uint256 priorityPlayerIndex,
+        uint256 otherPlayerIndex,
+        EffectStep step,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+        if (config.globalEffectsLength != 0) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config, battle, rng, 2, 2, step, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag
+            );
+        }
+        if (_anyMonListensAt(config, step)) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                priorityPlayerIndex,
+                priorityPlayerIndex,
+                step,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                otherPlayerIndex,
+                otherPlayerIndex,
+                step,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+        }
+    }
+
+    /// @dev One actor's after-move phase: its AfterMove effects, global AfterMove effects, then rest
+    ///      regen. Regen reads the move fresh because effects can rewrite it to a NO_OP mid-turn.
+    /// @custom:solar-inline always
+    function _runAfterMovePhase(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rng,
+        uint256 playerIndex,
+        uint8 inlineRegenFlags,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+        if (_anyMonListensAt(config, EffectStep.AfterMove)) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                playerIndex,
+                playerIndex,
+                EffectStep.AfterMove,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+        }
+        if (config.globalEffectsLength != 0) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                2,
+                playerIndex,
+                EffectStep.AfterMove,
+                EffectRunCondition.SkipIfGameOver,
+                playerSwitchForTurnFlag
+            );
+        }
+        if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
+            playerSwitchForTurnFlag = _inlineStaminaRegen(
+                config,
+                battle,
+                EffectStep.AfterMove,
+                playerIndex,
+                _unpackActiveMonIndex(battle.activeMonIndex, playerIndex),
+                0,
+                0,
+                playerSwitchForTurnFlag
+            );
+        }
+    }
+
+    /// @custom:solar-inline always
     function _handleEffects(
         BattleConfig storage config,
         BattleData storage battle,
@@ -3949,7 +3897,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (effectIndex == 2) {
             effectsCount = config.globalEffectsLength;
         } else {
-            // The battle-wide union is only the cheap outer gate. This exact mon lane prevents
+            // The all-mons check is only the cheap outer gate. This exact mon lane prevents
             // one listener (including a benched mon's) from routing unrelated active lists.
             if (!_monListensAt(config, effectIndex, monIndex, round)) {
                 return playerSwitchForTurnFlag;
@@ -4271,6 +4219,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev Active roster index of an absolute slot. Slot-0 lanes read the legacy field (so in
     ///      singles this is exactly _unpackActiveMonIndex); slot-1 lanes read activeMonExt.
+    /// @custom:solar-inline always
     function _slotActive(BattleData storage battle, uint256 absSlot) private view returns (uint256) {
         uint256 side = absSlot >> 1;
         if (absSlot & 1 == 0) {
@@ -4312,6 +4261,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev The packed actives word passed to effects/moves: one 8-bit lane per absolute slot.
     ///      2-slot only — singles never writes activeMonExt, so its slot-1 lanes would read
     ///      0x00 ("mon 0") instead of EMPTY_ACTIVE_LANE; singles paths use TargetLib.singlesActives.
+    /// @custom:solar-inline always
     function _buildActivesWord(BattleData storage battle) private view returns (uint256) {
         uint256 main = battle.activeMonIndex; // [side0 slot0 : 8 | side1 slot0 : 8]
         uint256 ext = battle.activeMonExt; // [side0 slot1 : 8 | side1 slot1 : 8]
@@ -4369,6 +4319,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      numBuffered [248..256). Keep in sync with `forge inspect Engine storage-layout`.
     /// @dev Raw BattleData slot-1 word (layout in _advanceTurn). Hot paths load it once per
     ///      call-free window instead of one SLOAD per field.
+    /// @custom:solar-inline always
     function _battleWord(BattleData storage battle) private view returns (uint256 word) {
         assembly ("memory-safe") {
             word := sload(add(battle.slot, 1))
@@ -4422,7 +4373,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         {
             uint104 s0 = uint104(_turnP0Packed);
             uint104 s1 = uint104(_turnP1Packed);
-            rng = address(config.rngOracle) == address(0)
+            rng = config.inlineRegenFlags & RNG_ORACLE_FLAG == 0
                 ? uint256(keccak256(abi.encode(s0, s1)))
                 : config.rngOracle.getRNG(bytes32(uint256(s0)), bytes32(uint256(s1)));
             tempRNG = rng;
@@ -4440,7 +4391,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
         }
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
+        if (_anyMonListensAt(config, EffectStep.RoundStart)) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundStart);
             if (battle.winnerIndex != 2) {
                 return 2;
@@ -4532,7 +4483,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
         }
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
+        if (_anyMonListensAt(config, EffectStep.RoundEnd)) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundEnd);
             if (battle.winnerIndex != 2) {
                 return 2;
@@ -5125,6 +5076,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /**
      * - Helper functions for packing/unpacking activeMonIndex
      */
+    /// @custom:solar-inline always
     function _unpackActiveMonIndex(uint16 packed, uint256 playerIndex) internal pure returns (uint256) {
         if (playerIndex == 0) {
             return uint256(uint8(packed));
@@ -5142,6 +5094,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     // Helper functions for per-mon effect count packing
+    /// @custom:solar-inline always
     function _getMonEffectCount(uint96 packedCounts, uint256 monIndex) private pure returns (uint256) {
         return (uint256(packedCounts) >> (monIndex * PLAYER_EFFECT_BITS)) & EFFECT_COUNT_MASK;
     }
@@ -5152,11 +5105,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return uint96(cleared | (count << shift));
     }
 
+    /// @custom:solar-inline always
     function _getEffectSlotIndex(uint256 monIndex, uint256 effectIndex) private pure returns (uint256) {
         return EFFECT_SLOTS_PER_MON * monIndex + effectIndex;
     }
 
     // Helper functions for accessing team and monState mappings
+    /// @custom:solar-inline always
     function _getTeamMon(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
         private
         view
@@ -5173,6 +5128,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      benchmarks, so we resolve it locally here.
     function _inlineStaminaRegen(
         BattleConfig storage config,
+        BattleData storage battle,
         EffectStep round,
         uint256 playerIndex,
         uint256 monIndex,
@@ -5182,7 +5138,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private returns (uint256 playerSwitchForTurnFlag) {
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
         if (round == EffectStep.RoundEnd) {
-            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) {
+            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battle.playerSwitchForTurnFlag)) {
                 return playerSwitchForTurnFlag;
             }
             _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
@@ -5203,7 +5159,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // engine wrongly runs the next turn as a normal both-sides-act turn instead of a forced switch.
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battleData[battleKeyForWrite], 2);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, 2);
         }
     }
 
@@ -5228,6 +5184,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _getMonState(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
         private
         view

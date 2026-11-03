@@ -160,47 +160,43 @@ struct BattleData {
 }
 
 // Stored by the Engine for a battle, is overwritten after a battle is over
+// Header fields are grouped by how often a turn needs them: every extra slot a turn touches is a
+// cold read in each per-turn transaction.
 struct BattleConfig {
-    uint96 packedP0EffectsCount; // 6 (PLAYER_EFFECT_BITS) bits for up to 16 mons for p0
-    IRandomnessOracle rngOracle;
-    uint96 packedP1EffectsCount;
-    // Slot 2 — 256 bits exactly:
+    // Slot 0: read by every call.
     address moveManager; // 160 — privileged role that can set moves for players outside of execute() call
     uint8 globalEffectsLength; //   8
     uint8 teamSizes; //   8 — Packed: lower 4 bits = p0 team size, upper 4 bits = p1 team size
     uint8 engineHooksLength; //   8
     uint16 koBitmaps; //  16 — Packed: lower 8 bits = p0 KO bitmap, upper 8 bits = p1 KO bitmap
-    uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825 (shrunk from uint48 for slot-2 packing)
-    uint8 inlineRegenFlags; //   8 — INLINE_REGEN_* bits (rest / round-end halves)
+    uint8 inlineRegenFlags; //   8 — INLINE_REGEN_* bits (rest / round-end halves) + RNG_ORACLE_FLAG
     uint8 globalKVCount; //   8 — live entry count in the current battle's globalKV key buffer
-    // Per-mon stat-boost source counts, 4 bits per mon (max 15 sources/mon — distinct callers).
-    // MUST reset every startBattle (recycled keys); rides the slot-2 consolidated write.
-    uint32 p0BoostCounts; //  32
-    uint104 p0Salt;
-    uint104 p1Salt;
-    // OR of every player (per-mon) effect's stepsBitmap added this battle. Lets the hot step
-    // pipelines (PreDamage / AfterDamage / OnUpdateMonState) skip the whole _runEffects shell when
-    // NO player effect listens at that step — e.g. battles without a Dreamcatcher (OnUpdateMonState)
-    // or Adaptor (PreDamage) listener, which is the common case. Over-approximate: never cleared on
-    // removal (safe — at worst runs a pipeline that finds nothing, as today). Packs into slot 3.
-    uint16 playerEffectStepsUnion; //  16
     // OR of every engine hook's stepsBitmap, set once at startBattle (hooks cannot be added
     // mid-battle). Gates the per-round hook loops: prod battles always carry the gacha hook,
     // which is OnBattleEnd-only, so without this gate every turn pays two pointless
     // engineHooks[i].stepsBitmap probes (~2.2k/turn — measured in ProdPvPGasBenchmark).
-    // Packs into slot 3 with the salts + player union; p0Move/p1Move shift to the next slot
-    // (which also makes the game-over move-slot clear a single-slot write).
     uint16 engineHookStepsUnion; //  16
-    // BATTLE_MODE_* (0 = singles). Rides slot 3's spare bits so the per-turn mode gate
-    // piggybacks on the engineHookStepsUnion SLOAD; rewritten every startBattle (recycled
-    // storage must never leak a previous battle's mode).
+    // BATTLE_MODE_* (0 = singles); rewritten every startBattle (recycled storage must never leak a
+    // previous battle's mode).
     uint8 battleMode; //   8
+    // Slot 1: effect and boost counts, read together on most turns.
+    uint96 packedP0EffectsCount; // 6 (PLAYER_EFFECT_BITS) bits for up to 16 mons for p0
+    uint96 packedP1EffectsCount;
+    // Per-mon stat-boost source counts, 4 bits per mon (max 15 sources/mon — distinct callers).
+    // MUST reset every startBattle (recycled keys).
+    uint32 p0BoostCounts; //  32
+    uint32 p1BoostCounts; //  32
+    // Slot 2.
+    IRandomnessOracle rngOracle;
     // Per-mon exclusive-status lanes: one 4-bit class nibble per mon, laneIndex = side*8 +
     // monIndex (stride 8 = the Engine's hard team-size cap, NOT MONS_PER_TEAM). 0 = no status.
     // Engine-owned: set in _addEffectInternal, cleared in _removeEffectAtSlot / startBattle's
-    // consolidated reset. Rides slot 3 so both writes coalesce with SSTOREs already paid.
+    // consolidated reset.
     uint64 monStatusLanes; //  64
-    uint32 p1BoostCounts; //  32 — see p0BoostCounts; rides slot 3
+    // Slot 3: only the legacy storage path reads the salts.
+    uint104 p0Salt;
+    uint104 p1Salt;
+    uint40 startTimestamp; //  40 — battle start time; overflows in year ~36825
     MoveDecision p0Move;
     MoveDecision p1Move;
     // Stored at startBattle so Engine.getBattle can passthrough to level/exp/facet getters.

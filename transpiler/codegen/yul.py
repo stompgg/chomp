@@ -639,18 +639,31 @@ class YulTranspiler:
         """(var name, layout, member types) for a slot expression, or None."""
         if self._slot_resolver is None:
             return None
-        name = None
-        if isinstance(expr, YulSlotAccess):
-            name = expr.variable
-        elif isinstance(expr, YulIdentifier) and expr.name in slot_vars:
-            name = slot_vars[expr.name]
-        if name is None:
+        ref = self._slot_ref(expr, slot_vars)
+        if ref is None:
             return None
-        resolved = self._slot_resolver(name)
+        name, index = ref
+        resolved = self._slot_resolver(name, index)
         if resolved is None:
             return None
         layout, member_types = resolved
+        # The shadow store only carries undeclared bits for slot 0.
+        if index != 0 and layout.has_free_bits:
+            return None
         return name, layout, member_types
+
+    def _slot_ref(self, expr, slot_vars: Dict[str, str]):
+        """(var name, slot index) for `x.slot` or `add(x.slot, N)`, or None."""
+        if isinstance(expr, YulSlotAccess):
+            return expr.variable, 0
+        if isinstance(expr, YulIdentifier) and expr.name in slot_vars:
+            return slot_vars[expr.name], 0
+        if isinstance(expr, YulFunctionCall) and expr.name == 'add' and len(expr.arguments) == 2:
+            base, offset = expr.arguments
+            ref = self._slot_ref(base, slot_vars)
+            if ref is not None and isinstance(offset, YulLiteral) and str(offset.value).isdigit():
+                return ref[0], ref[1] + int(offset.value)
+        return None
 
     @staticmethod
     def _member_pack(access: str, tn) -> Optional[str]:
@@ -708,7 +721,17 @@ class YulTranspiler:
         lines = [f'{prefix}const {tmp} = BigInt({value});']
         for f in layout.fields:
             src = tmp if f.bit_offset == 0 else f'({tmp} >> {f.bit_offset}n)'
-            val = self._member_unpack(src, member_types.get(f.name), f.bit_width)
+            tn = member_types.get(f.name)
+            if tn is not None and (tn.name or '').strip() == 'address':
+                # Addresses are strings compared by value, so an unchanged member must
+                # keep its exact spelling.
+                bits = f'(({src}) & ((1n << {f.bit_width}n) - 1n))'
+                lines.append(
+                    f"{prefix}if (BigInt({name}.{f.name}) !== {bits}) "
+                    f"{name}.{f.name} = '0x' + {bits}.toString(16).padStart(40, '0');"
+                )
+                continue
+            val = self._member_unpack(src, tn, f.bit_width)
             if val is None:
                 return None
             lines.append(f'{prefix}{name}.{f.name} = {val};')

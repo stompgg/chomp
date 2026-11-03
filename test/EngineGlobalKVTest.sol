@@ -244,8 +244,13 @@ contract EngineGlobalKVTest is Test, BattleHelper {
         _aliceWrites(battleKey1, KEY_A);
         uint256 battle1TurnGas = gasBefore1 - gasleft();
 
-        vm.warp(block.timestamp + 1);
+        bytes32 storageKey = engine.getStorageKey(battleKey1);
+        vm.warp(vm.getBlockTimestamp() + 1);
+        vm.prank(ALICE);
+        engine.forfeit(battleKey1);
+
         bytes32 battleKey2 = _startSecondBattle();
+        assertEq(engine.getStorageKey(battleKey2), storageKey, "battle 2 must reuse battle 1's storage key");
 
         uint256 gasBefore2 = gasleft();
         _aliceWrites(battleKey2, KEY_A);

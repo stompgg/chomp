@@ -35,7 +35,7 @@ library StatBoostLib {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Aggregation accumulator (one uint256, rebuilt in memory by the Engine on every change).
+    // Reference aggregation, kept for the parity tests; the Engine uses foldLane / finalizeLane.
     //
     // 5 stat lanes of [numerator:48 | count:3] at bit k*51. A lane mirrors _accumulateOne's
     // running product exactly: numerator = base × ∏(100 ± pct) with count total instances,
@@ -50,6 +50,7 @@ library StatBoostLib {
     uint256 internal constant ACC_CNT_MASK = 0x7;
 
     /// @dev Lane k of a packed source word: (pct, count, isMul). count == 0 means "no boost".
+    /// @custom:solar-inline always
     function laneAt(bytes32 data, uint256 k) internal pure returns (uint256 pct, uint256 cnt, bool mul) {
         uint256 inst = (uint256(data) >> (k * 16)) & 0xFFFF;
         pct = inst >> 8;
@@ -64,6 +65,7 @@ library StatBoostLib {
     ///      representable factor rather than reverting (a revert here would wedge the battle — note
     ///      `DENOM - boostPercent` underflows for the uint8 range above 100). Every live move uses
     ///      15-50%, so this is defensive only.
+    /// @custom:solar-inline always
     function boostFactor(uint256 boostPercent, bool isMul) internal pure returns (uint256) {
         if (isMul) {
             return DENOM + boostPercent;
@@ -144,6 +146,77 @@ library StatBoostLib {
                 newBoostedStats[k] = uint32(raw);
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Per-lane aggregation. A stat's value depends only on its own lane across the sources, so a
+    // change recomputes just the lanes it touched. The unchecked product equals the accumulator
+    // wherever that fits, and is the same wrap-then-clamp arithmetic where it does not.
+    // ---------------------------------------------------------------------------------------------
+
+    /// @dev Bit k is set when the 16-bit stat lane k of `lanes` is nonzero.
+    function laneMask(uint256 lanes) internal pure returns (uint256 mask) {
+        for (uint256 k; k < 5; ++k) {
+            if ((lanes >> (k * 16)) & 0xFFFF != 0) {
+                mask |= 1 << k;
+            }
+        }
+    }
+
+    /// @dev Folds source `word`'s lane k into a running (numerator, count), seeded with (base, 0).
+    /// @custom:solar-inline always
+    function foldLane(uint256 num, uint256 total, bytes32 word, uint256 k) internal pure returns (uint256, uint256) {
+        (uint256 pct, uint256 cnt, bool mul) = laneAt(word, k);
+        if (cnt == 0) {
+            return (num, total);
+        }
+        unchecked {
+            return (num * (boostFactor(pct, mul) ** cnt), total + cnt);
+        }
+    }
+
+    /// @dev Boosted stat for a folded lane: base when nothing boosts it, else clamped to [1, max].
+    /// @custom:solar-inline always
+    function finalizeLane(uint256 num, uint256 total, uint32 base) internal pure returns (uint32) {
+        if (total == 0) {
+            return base;
+        }
+        uint256 raw = num / denomPower(total);
+        if (raw > MAX_BOOSTED_STAT) {
+            return MAX_BOOSTED_STAT;
+        }
+        return raw == 0 ? 1 : uint32(raw);
+    }
+
+    /// @dev packBoostData for calldata input, without copying the array to memory.
+    function packFreshWord(uint168 key, bool perm, StatBoostToApply[] calldata boosts) internal pure returns (bytes32) {
+        uint256 packed = (perm ? (uint256(1) << PERM_FLAG_OFFSET) : 0) | (uint256(key) << KEY_OFFSET);
+        for (uint256 i; i < boosts.length; ++i) {
+            uint256 boostInstance = (uint256(boosts[i].boostPercent) << 8) | 2
+                | (boosts[i].boostType == StatBoostType.Multiply ? 1 : 0);
+            packed |= boostInstance << (monStateIndexToStatBoostIndex(boosts[i].stat) * 16);
+        }
+        return bytes32(packed);
+    }
+
+    /// @dev Merges boosts into an existing source word in place: a boosted lane gains a stack, up to
+    ///      the instance cap, and an unboosted lane takes the new boost.
+    function mergeIntoWord(bytes32 word, StatBoostToApply[] calldata boosts) internal pure returns (bytes32) {
+        uint256 packed = uint256(word);
+        for (uint256 i; i < boosts.length; ++i) {
+            uint256 shift = monStateIndexToStatBoostIndex(boosts[i].stat) * 16;
+            uint256 lane = (packed >> shift) & 0xFFFF;
+            if (lane >> 8 != 0) {
+                if ((lane >> 1) & 0x7F < MAX_BOOST_COUNT_PER_INSTANCE) {
+                    lane += 2;
+                }
+            } else {
+                lane = (uint256(boosts[i].boostPercent) << 8) | 2
+                    | (boosts[i].boostType == StatBoostType.Multiply ? 1 : 0);
+            }
+            packed = (packed & ~(uint256(0xFFFF) << shift)) | (lane << shift);
+        }
+        return bytes32(packed);
     }
 
     // Pack a fresh boost instance from the caller-supplied boosts.

@@ -12,7 +12,11 @@ import os
 # to avoid conflict with local 'types' package and Python's built-in 'types' module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from transpiler.codegen.yul import YulTranspiler
 from transpiler.lexer import Lexer
 from transpiler.parser import Parser
 from transpiler.codegen import TypeScriptCodeGenerator
@@ -448,6 +452,63 @@ class TestYulTranspiler(unittest.TestCase):
         yul_code = 'let x := MY_CONST'
         result = transpiler_with_constants.transpile(yul_code)
         self.assertIn('Constants.MY_CONST', result)
+
+
+class TestWholeSlotAccess(unittest.TestCase):
+    """Raw slot access must lower onto the modelled struct fields in both backends."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def _resolver(self, seen):
+        from transpiler.parser.ast_nodes import TypeName
+        from transpiler.type_system.slots import SlotField, SlotLayout
+
+        fields = (SlotField('p0', 0, 160), SlotField('flag', 160, 8), SlotField('delta', 168, 32))
+        layouts = {
+            0: SlotLayout(index=0, fields=(SlotField('p1', 0, 160),)),
+            1: SlotLayout(index=1, fields=fields + (SlotField('rest', 200, 56),)),
+        }
+        types = {
+            'p0': TypeName(name='address'),
+            'p1': TypeName(name='address'),
+            'flag': TypeName(name='uint8'),
+            'delta': TypeName(name='int32'),
+            'rest': TypeName(name='uint56'),
+        }
+
+        def resolve(name, index):
+            seen.append((name, index))
+            return (layouts[index], types) if index in layouts else None
+
+        return resolve
+
+    def test_ts_reads_offset_slot_from_fields(self):
+        seen = []
+        out = YulTranspiler().transpile('w := sload(add(b.slot, 1))', slot_resolver=self._resolver(seen))
+        self.assertEqual(seen, [('b', 1)])
+        self.assertIn('b.flag', out)
+        self.assertNotIn('_storageRead', out)
+
+    def test_ts_write_keeps_address_a_string(self):
+        out = YulTranspiler().transpile('sstore(add(b.slot, 1), w)', slot_resolver=self._resolver([]))
+        self.assertNotIn('Contract.at', out)
+        self.assertIn('b.delta = BigInt.asIntN(32,', out)
+        self.assertRegex(out, r"if \(BigInt\(b\.p0\) !== .*\) b\.p0 = '0x'")
+
+    def test_ts_unknown_offset_is_not_modelled_as_fields(self):
+        out = YulTranspiler().transpile('w := sload(add(b.slot, 9))', slot_resolver=self._resolver([]))
+        self.assertIn('_storageRead', out)
+
+    def test_generated_engines_have_no_unmodelled_assembly(self):
+        with tempfile.TemporaryDirectory() as d:
+            for target, out in (('rust', 'rs'), ('ts', 'ts')):
+                cmd = [sys.executable, '-m', 'transpiler', 'src/', '-o', f'{d}/{out}']
+                cmd += ['--target', 'rust'] if target == 'rust' else ['-d', 'src']
+                subprocess.run(cmd, cwd=self.ROOT, check=True, capture_output=True)
+            rust = Path(d, 'rs/engine/src/Engine.rs').read_text()
+            ts = Path(d, 'ts/Engine.ts').read_text()
+        self.assertNotIn('unrecognized inline assembly', rust)
+        self.assertNotIn('BigInt((battle as any))', ts)
 
 
 class TestYulTokenizer(unittest.TestCase):

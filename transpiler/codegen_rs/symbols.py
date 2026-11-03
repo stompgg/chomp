@@ -713,6 +713,21 @@ class RustSymbols:
             struct_defs=self.struct_defs,
         )
 
+    def slot_layout_at(self, name: str, index: int):
+        """Layout of slot `index` of struct `name`, or None when it isn't exactly known."""
+        from ..type_system.slots import slot_at
+
+        struct = self.struct_defs.get(name)
+        if struct is None:
+            return None
+        return slot_at(
+            struct,
+            index,
+            enum_names=set(self.enums),
+            struct_names=set(self.structs),
+            structs=self.struct_defs,
+        )
+
     def _record_constant(self, var, resolver, container) -> None:
         self.constants[(container, var.name)] = ConstSig(
             name=var.name,
