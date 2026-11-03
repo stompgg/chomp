@@ -62,6 +62,10 @@ address constant INLINE_REST_REGEN_MARKER = address(0x57B);
 uint8 constant INLINE_REGEN_REST = 0x1; // AfterMove, when the mon rested (NO_OP)
 uint8 constant INLINE_REGEN_ROUND_END = 0x2; // RoundEnd, on full two-player turns
 uint8 constant INLINE_REGEN_ALL = INLINE_REGEN_REST | INLINE_REGEN_ROUND_END;
+uint8 constant RNG_ORACLE_FLAG = 0x4; // Battle uses an external rngOracle; kept here to avoid its cold slot
+
+// actedSlotsThisTurnMask once both singles actives (absolute slots 0 and 2) have acted.
+uint256 constant SINGLES_ALL_SLOTS_ACTED = 0x5;
 
 // Sentinel moveManager address: when a battle's moveManager is set to this, the battle uses the
 // Engine's built-in dual-signed buffer flow (submitTurnMoves / executeBuffered) instead of an

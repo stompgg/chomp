@@ -433,7 +433,8 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.globalKVCount = 0;
         config.p0BoostCounts = 0;
         config.teamSizes = newTeamSizes;
-        config.inlineRegenFlags = newRegenFlags;
+        config.inlineRegenFlags =
+            address(battle.rngOracle) == address(0) ? newRegenFlags : newRegenFlags | RNG_ORACLE_FLAG;
         config.globalEffectsLength = newGlobalEffectsLength;
         config.engineHooksLength = uint8(numHooks);
         config.startTimestamp = uint40(block.timestamp);
@@ -574,6 +575,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (msg.sender != config.moveManager) {
             revert WrongCaller();
         }
+        BattleData storage battle = battleData[battleKey];
         for (uint256 i = 0; i < entries.length; i++) {
             uint256 entry = entries[i];
             uint8 p0Move = uint8(entry);
@@ -584,7 +586,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint104 p1Salt = uint104(entry >> 152);
 
             // Live flag read (direct storage, warm after the first sub-turn).
-            uint8 flag = battleData[battleKey].playerSwitchForTurnFlag;
+            uint8 flag = battle.playerSwitchForTurnFlag;
             if (flag == 2) {
                 uint8 p0Stored = p0Move < SWITCH_MOVE_INDEX ? p0Move + MOVE_INDEX_OFFSET : p0Move;
                 uint8 p1Stored = p1Move < SWITCH_MOVE_INDEX ? p1Move + MOVE_INDEX_OFFSET : p1Move;
@@ -1301,15 +1303,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             uint256 rng;
             uint104 p0TurnSalt = p0Packed != 0 ? uint104(p0Packed) : config.p0Salt;
             uint104 p1TurnSalt = p1Packed != 0 ? uint104(p1Packed) : config.p1Salt;
-            if (address(config.rngOracle) == address(0)) {
+            // Read once: the flag also says whether rng needs the oracle's cold slot.
+            uint8 inlineRegenFlags = config.inlineRegenFlags;
+            if (inlineRegenFlags & RNG_ORACLE_FLAG == 0) {
                 rng = uint256(keccak256(abi.encode(p0TurnSalt, p1TurnSalt)));
             } else {
                 rng = config.rngOracle.getRNG(bytes32(uint256(p0TurnSalt)), bytes32(uint256(p1TurnSalt)));
             }
             tempRNG = rng;
-
-            // Cache `inlineRegenFlags` once instead of re-reading config slot 2 three times below.
-            uint8 inlineRegenFlags = config.inlineRegenFlags;
 
             // Calculate the priority and non-priority player indices. Use the internal helper
             // with already-resolved config/battle/moves to skip redundant storage re-resolution.
@@ -1357,7 +1358,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
 
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
-            actedSlotsThisTurnMask |= 1 << (priorityPlayerIndex << 1);
+            actedSlotsThisTurnMask = 1 << (priorityPlayerIndex << 1);
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
 
@@ -1406,7 +1407,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
 
             // Run the non priority player's move
-            actedSlotsThisTurnMask |= 1 << (otherPlayerIndex << 1);
+            actedSlotsThisTurnMask = SINGLES_ALL_SLOTS_ACTED;
             playerSwitchForTurnFlag = _handleMove(battleKey, config, battle, otherPlayerIndex, playerSwitchForTurnFlag);
 
             // For turn 0 only: wait for both mons to be sent in, then handle the ability activateOnSwitch
@@ -2732,7 +2733,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             newDelta = -int32(baseHp); // past fully-dead; the exact magnitude carries no meaning
         }
         monState.hpDelta = newDelta;
-        if (monState.hpDelta + int32(baseHp) <= 0) {
+        if (newDelta + int32(baseHp) <= 0) {
             monState.isKnockedOut = true;
             _setMonKO(config, playerIndex, monIndex);
             koOccurredFlag = 1;
@@ -3467,7 +3468,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // Handle shouldSkipTurn flag first and toggle it off if set
         uint256 activeMonIndex = _unpackActiveMonIndex(activesWord, playerIndex);
         MonState storage currentMonState = _getMonState(config, playerIndex, activeMonIndex);
-        if (currentMonState.shouldSkipTurn) {
+        bool shouldSkipTurn = currentMonState.shouldSkipTurn;
+        bool isKnockedOut = currentMonState.isKnockedOut;
+        if (shouldSkipTurn) {
             currentMonState.shouldSkipTurn = false;
             // A forced-switch turn's coerced send-in is not an action the skip flag may eat.
             uint8 storedFlag = uint8(battleWord >> 168);
@@ -3484,7 +3487,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
         // Coerce to a switch when one is required: turn 0 (initial send-in) or active mon KO'd.
         // Target the first non-KO'd slot so the switch always lands
-        if ((turnId == 0 || currentMonState.isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
+        if ((turnId == 0 || isKnockedOut) && moveIndex != SWITCH_MOVE_INDEX) {
             moveIndex = SWITCH_MOVE_INDEX;
             extraData = uint16(_firstNonKOed(config, playerIndex));
         }
@@ -4422,7 +4425,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         {
             uint104 s0 = uint104(_turnP0Packed);
             uint104 s1 = uint104(_turnP1Packed);
-            rng = address(config.rngOracle) == address(0)
+            rng = config.inlineRegenFlags & RNG_ORACLE_FLAG == 0
                 ? uint256(keccak256(abi.encode(s0, s1)))
                 : config.rngOracle.getRNG(bytes32(uint256(s0)), bytes32(uint256(s1)));
             tempRNG = rng;
