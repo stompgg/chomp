@@ -50,6 +50,7 @@ library StatBoostLib {
     uint256 internal constant ACC_CNT_MASK = 0x7;
 
     /// @dev Lane k of a packed source word: (pct, count, isMul). count == 0 means "no boost".
+    /// @custom:solar-inline always
     function laneAt(bytes32 data, uint256 k) internal pure returns (uint256 pct, uint256 cnt, bool mul) {
         uint256 inst = (uint256(data) >> (k * 16)) & 0xFFFF;
         pct = inst >> 8;
@@ -64,6 +65,7 @@ library StatBoostLib {
     ///      representable factor rather than reverting (a revert here would wedge the battle — note
     ///      `DENOM - boostPercent` underflows for the uint8 range above 100). Every live move uses
     ///      15-50%, so this is defensive only.
+    /// @custom:solar-inline always
     function boostFactor(uint256 boostPercent, bool isMul) internal pure returns (uint256) {
         if (isMul) {
             return DENOM + boostPercent;

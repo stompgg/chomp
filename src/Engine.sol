@@ -1148,6 +1148,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev Allocation-free current-turn lane with the same transient/storage fallback as
     ///      _getCurrentTurnMove. Used to build fresh external hook context.
+    /// @custom:solar-inline always
     function _currentTurnMoveWord(BattleConfig storage config, uint256 playerIndex) private view returns (uint256) {
         uint256 encoded = (playerIndex == 0 ? _turnP0Packed : _turnP1Packed) >> 104;
         if (encoded != 0) {
@@ -2041,6 +2042,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     /// @dev Bit offset of a mon's uint16 exact lifecycle-step union (stride 8/side).
+    /// @custom:solar-inline always
     function _effectStepLaneShift(uint256 targetIndex, uint256 monIndex) private pure returns (uint256) {
         return ((targetIndex << 3) | monIndex) << 4;
     }
@@ -2115,6 +2117,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _effectDataAndHookContext(EffectInstance storage effectInstance)
         private
         view
@@ -2130,6 +2133,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         usesResolver = header & EFFECT_RESOLVER_FLAG != 0;
     }
 
+    /// @custom:solar-inline always
     function _monEffectSteps(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
         private
         view
@@ -2146,6 +2150,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return _stepsWordListens(config.playerEffectStepsByMon, targetIndex, monIndex, step);
     }
 
+    /// @custom:solar-inline always
     function _stepsWordListens(uint256 stepsWord, uint256 targetIndex, uint256 monIndex, EffectStep step)
         private
         pure
@@ -2376,6 +2381,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     // Boost-source store: one packed word per source at slot monIndex * 16 + i (i < the mon's
     // 4-bit count nibble). 15 sources/mon is far above the plausible distinct-caller ceiling.
 
+    /// @custom:solar-inline always
     function _boostWordsOf(BattleConfig storage config, uint256 targetIndex)
         private
         view
@@ -2384,6 +2390,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return targetIndex == 0 ? config.p0BoostWords : config.p1BoostWords;
     }
 
+    /// @custom:solar-inline always
     function _boostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
         private
         view
@@ -2393,6 +2400,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return (packed >> (monIndex * 4)) & 0xF;
     }
 
+    /// @custom:solar-inline always
     function _setBoostCountOf(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, uint256 newCount)
         private
     {
@@ -3745,6 +3753,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _runSingleEffect(
         BattleConfig storage config,
         uint256 rng,
@@ -3831,6 +3840,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _executeEffectHook(
         bytes32 battleKey,
         IEffect effect,
@@ -4274,6 +4284,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
     /// @dev Active roster index of an absolute slot. Slot-0 lanes read the legacy field (so in
     ///      singles this is exactly _unpackActiveMonIndex); slot-1 lanes read activeMonExt.
+    /// @custom:solar-inline always
     function _slotActive(BattleData storage battle, uint256 absSlot) private view returns (uint256) {
         uint256 side = absSlot >> 1;
         if (absSlot & 1 == 0) {
@@ -4315,6 +4326,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /// @dev The packed actives word passed to effects/moves: one 8-bit lane per absolute slot.
     ///      2-slot only — singles never writes activeMonExt, so its slot-1 lanes would read
     ///      0x00 ("mon 0") instead of EMPTY_ACTIVE_LANE; singles paths use TargetLib.singlesActives.
+    /// @custom:solar-inline always
     function _buildActivesWord(BattleData storage battle) private view returns (uint256) {
         uint256 main = battle.activeMonIndex; // [side0 slot0 : 8 | side1 slot0 : 8]
         uint256 ext = battle.activeMonExt; // [side0 slot1 : 8 | side1 slot1 : 8]
@@ -4372,6 +4384,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      numBuffered [248..256). Keep in sync with `forge inspect Engine storage-layout`.
     /// @dev Raw BattleData slot-1 word (layout in _advanceTurn). Hot paths load it once per
     ///      call-free window instead of one SLOAD per field.
+    /// @custom:solar-inline always
     function _battleWord(BattleData storage battle) private view returns (uint256 word) {
         assembly ("memory-safe") {
             word := sload(add(battle.slot, 1))
@@ -5128,6 +5141,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     /**
      * - Helper functions for packing/unpacking activeMonIndex
      */
+    /// @custom:solar-inline always
     function _unpackActiveMonIndex(uint16 packed, uint256 playerIndex) internal pure returns (uint256) {
         if (playerIndex == 0) {
             return uint256(uint8(packed));
@@ -5145,6 +5159,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     }
 
     // Helper functions for per-mon effect count packing
+    /// @custom:solar-inline always
     function _getMonEffectCount(uint96 packedCounts, uint256 monIndex) private pure returns (uint256) {
         return (uint256(packedCounts) >> (monIndex * PLAYER_EFFECT_BITS)) & EFFECT_COUNT_MASK;
     }
@@ -5155,11 +5170,13 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return uint96(cleared | (count << shift));
     }
 
+    /// @custom:solar-inline always
     function _getEffectSlotIndex(uint256 monIndex, uint256 effectIndex) private pure returns (uint256) {
         return EFFECT_SLOTS_PER_MON * monIndex + effectIndex;
     }
 
     // Helper functions for accessing team and monState mappings
+    /// @custom:solar-inline always
     function _getTeamMon(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
         private
         view
@@ -5231,6 +5248,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @custom:solar-inline always
     function _getMonState(BattleConfig storage config, uint256 playerIndex, uint256 monIndex)
         private
         view
