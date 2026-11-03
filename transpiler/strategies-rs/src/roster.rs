@@ -371,6 +371,7 @@ pub fn load_roster(chomp_root: &Path) -> Roster {
                 specialDefense: r[c_spd].parse().unwrap(),
                 type1: type_from_name(&r[c_t1]),
                 type2: type_from_name(&r[c_t2]),
+                ..Default::default()
             },
             ability,
             catalog,

@@ -519,13 +519,13 @@ class StatementGenerator(BaseGenerator):
     # ASSEMBLY
     # =========================================================================
 
-    def _slot_layout_of(self, var_name: str):
-        """(slot-0 layout, member TypeNames) for a struct-typed local, or None.
+    def _slot_layout_of(self, var_name: str, index: int = 0):
+        """(slot layout, member TypeNames) for a struct-typed local, or None.
 
         Assembly reaching a raw slot has to be reconciled with the modelled
         fields; only the statement layer knows local variable types.
         """
-        from ..type_system.slots import slot_zero
+        from ..type_system.slots import slot_at
 
         registry = getattr(self._ctx, '_registry', None)
         if registry is None:
@@ -536,8 +536,9 @@ class StatementGenerator(BaseGenerator):
         struct = registry.struct_defs.get(type_name.name)
         if struct is None:
             return None
-        layout = slot_zero(
+        layout = slot_at(
             struct,
+            index,
             enum_names=registry.enums,
             struct_names=registry.structs,
             structs=registry.struct_defs,

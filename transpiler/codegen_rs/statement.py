@@ -752,12 +752,18 @@ class RustStatementGenerator:
         limbs = [(value >> (64 * i)) & 0xFFFFFFFFFFFFFFFF for i in range(4)]
         return f'U256::from_limbs([{", ".join(f"{l}u64" for l in limbs)}])'
 
-    def _slot_place(self, ident: str):
-        """(place code, slot-0 layout, member SolTypes) for a `<ident>.slot`."""
+    def _slot_place(self, ident: str, index: int = 0):
+        """(place code, slot layout, member SolTypes) for slot `index` of `<ident>`."""
         place, t = self._expr.emit_typed(Identifier(name=ident))
         if t is None or t.kind != 'struct' or not t.name:
             return None
-        layout = self._symbols.slot_layouts.get(t.name)
+        if index == 0:
+            layout = self._symbols.slot_layouts.get(t.name)
+        else:
+            layout = self._symbols.slot_layout_at(t.name, index)
+            # Only slot 0 has a generated member for undeclared bits.
+            if layout is not None and layout.has_free_bits:
+                return None
         if layout is None:
             return None
         return place, layout, dict(self._symbols.structs.get(t.name, []))
@@ -774,6 +780,8 @@ class RustStatementGenerator:
             return f'U256::from({code} as u8)'
         if t.kind == 'uint':
             return f'U256::from({code})'
+        if t.kind == 'int' and t.is_native and not t.is_odd_width:
+            return f'U256::from({code} as u{t.mapped_bits})'
         if t.kind == 'bytes_fixed' and t.bytes_n == 32:
             return f'rt::b256_to_u256({code})'
         return None
@@ -794,12 +802,14 @@ class RustStatementGenerator:
             )
         if t.kind == 'uint':
             return f'rt::mask_bits({src}, {bits}).wrapping_to::<{self._types.rust_type(t)}>()'
+        if t.kind == 'int' and t.is_native and not t.is_odd_width:
+            return f'(rt::mask_bits({src}, {bits}).wrapping_to::<u{t.mapped_bits}>() as i{t.mapped_bits})'
         if t.kind == 'bytes_fixed' and t.bytes_n == 32:
             return f'rt::u256_to_b256({src})'
         return None
 
-    def _slot_read(self, lhs_ident: str, place_ident: str) -> Optional[str]:
-        info = self._slot_place(place_ident)
+    def _slot_read(self, lhs_ident: str, place_ident: str, index: int = 0) -> Optional[str]:
+        info = self._slot_place(place_ident, index)
         if info is None:
             return None
         place, layout, ftypes = info
@@ -810,14 +820,14 @@ class RustStatementGenerator:
             if conv is None:
                 return None
             terms.append(conv if f.bit_offset == 0 else f'({conv} << {f.bit_offset}usize)')
-        if layout.has_free_bits:
+        if index == 0 and layout.has_free_bits:
             terms.append(f'{p}.{SLOT0_FREE_FIELD}')
         lhs, _ = self._expr.emit_typed(Identifier(name=lhs_ident))
         packed = ' | '.join(terms) if terms else 'U256::ZERO'
         return f'{self.ind()}{lhs} = {{ let {p} = &{place}; {packed} }};'
 
-    def _slot_write(self, place_ident: str, value_ident: str) -> Optional[str]:
-        info = self._slot_place(place_ident)
+    def _slot_write(self, place_ident: str, value_ident: str, index: int = 0) -> Optional[str]:
+        info = self._slot_place(place_ident, index)
         if info is None:
             return None
         place, layout, ftypes = info
@@ -831,7 +841,7 @@ class RustStatementGenerator:
             if conv is None:
                 return None
             assigns.append(f'{p}.{rust_ident(f.name)} = {conv};')
-        if layout.has_free_bits:
+        if index == 0 and layout.has_free_bits:
             assigns.append(
                 f'{p}.{SLOT0_FREE_FIELD} = {v} & {self._u256_literal(layout.free_mask)};'
             )
@@ -839,6 +849,32 @@ class RustStatementGenerator:
             f'{self.ind()}{{ let {v} = {value}; let {p} = &mut {place}; '
             f'{" ".join(assigns)} }}'
         )
+
+    def _gen_slot_statements(self, flat: str) -> Optional[str]:
+        """Lower a block made only of whole-slot reads and writes, or None."""
+        import re
+
+        slot_ref = r'(?:(\w+)\.slot|add\((\w+)\.slot,(\d+)\))'
+        read = re.compile(rf'(\w+):=sload\({slot_ref}\)')
+        write = re.compile(rf'sstore\({slot_ref},(\w+)\)')
+        lines = []
+        pos = 0
+        while pos < len(flat):
+            m = read.match(flat, pos)
+            if m:
+                lhs, plain, offset_base, offset = m.groups()
+                line = self._slot_read(lhs, plain or offset_base, int(offset or 0))
+            else:
+                m = write.match(flat, pos)
+                if m is None:
+                    return None
+                plain, offset_base, offset, value = m.groups()
+                line = self._slot_write(plain or offset_base, value, int(offset or 0))
+            if line is None:
+                return None
+            lines.append(line)
+            pos = m.end()
+        return '\n'.join(lines) if lines else None
 
     def _gen_assembly(self, stmt: AssemblyStatement) -> str:
         import re
@@ -865,16 +901,9 @@ class RustStatementGenerator:
         # each member separately, so the slot word is packed from (or split
         # back into) those members plus the generated undeclared-bit overlay.
         flat = re.sub(r'\s+', '', code)
-        m = re.fullmatch(r'(\w+):=sload\((\w+)\.slot\)', flat)
-        if m:
-            emitted = self._slot_read(m.group(1), m.group(2))
-            if emitted is not None:
-                return emitted
-        m = re.fullmatch(r'sstore\((\w+)\.slot,(\w+)\)', flat)
-        if m:
-            emitted = self._slot_write(m.group(1), m.group(2))
-            if emitted is not None:
-                return emitted
+        emitted = self._gen_slot_statements(flat)
+        if emitted is not None:
+            return emitted
 
         # Shape 3: batch event-payload packer (_packBatchPayload).
         if 'calldataload' in code and 'shl(104' in code:
