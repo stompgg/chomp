@@ -438,13 +438,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         config.globalEffectsLength = newGlobalEffectsLength;
         config.engineHooksLength = uint8(numHooks);
         config.startTimestamp = uint40(block.timestamp);
-        // --- Consolidated slot-3 write (salts + both step unions + mode) ---
+        // --- Consolidated slot-3 write (salts + hook step union + mode) ---
         // Salts are only written by the legacy setMove storage path and never cleared at game
         // over; reset them so a recycled key cannot leak the previous battle's salts in.
         // battleMode must likewise be rewritten every battle (recycled storage).
         config.p0Salt = 0;
         config.p1Salt = 0;
-        config.playerEffectStepsUnion = 0;
         config.engineHookStepsUnion = hookStepsUnion;
         config.battleMode = battleMode;
         config.monStatusLanes = 0;
@@ -1320,92 +1319,26 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
 
             // Run beginning of round effects. Skip the global-list call when there are no global
             // effects (the inline-regen prod default keeps globalEffectsLength == 0), and skip the
-            // per-player calls when no effect anywhere listens at RoundStart (union bit clear) — both
+            // per-player calls when no effect anywhere listens at RoundStart — both
             // avoid the _handleEffects call + its winnerIndex/koOccurredFlag bookkeeping when there is
             // provably nothing to run. Ordering (global, priority, other) is preserved.
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    2,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.RoundStart,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag = _runRoundPhase(
+                config,
+                battle,
+                rng,
+                priorityPlayerIndex,
+                otherPlayerIndex,
+                EffectStep.RoundStart,
+                playerSwitchForTurnFlag
+            );
 
             // Run priority player's move (NOTE: moves won't run if either mon is KOed)
             actedSlotsThisTurnMask = 1 << (priorityPlayerIndex << 1);
             playerSwitchForTurnFlag =
                 _handleMove(battleKey, config, battle, priorityPlayerIndex, playerSwitchForTurnFlag);
 
-            // If priority mons is not KO'ed, then run the priority player's mon's afterMove hook(s).
-            // Union re-read here (not cached from RoundStart): the move just executed may have added an
-            // effect that listens at AfterMove.
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Always run the global effect's afterMove hook(s)
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    priorityPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Stamina regen decision is encapsulated in _inlineStaminaRegen, which reads the move FRESH
-            // — required because effects (SleepStatus) can rewrite the move to a resting NO_OP mid-turn.
-            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
-                playerSwitchForTurnFlag = _inlineStaminaRegen(
-                    config,
-                    EffectStep.AfterMove,
-                    priorityPlayerIndex,
-                    _unpackActiveMonIndex(battle.activeMonIndex, priorityPlayerIndex),
-                    0,
-                    0,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag =
+                _runAfterMovePhase(config, battle, rng, priorityPlayerIndex, inlineRegenFlags, playerSwitchForTurnFlag);
 
             // Run the non priority player's move
             actedSlotsThisTurnMask = SINGLES_ALL_SLOTS_ACTED;
@@ -1432,94 +1365,19 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
 
-            // If non priority mon is not KOed, then run the non priority player's mon's afterMove hook(s).
-            // Union re-read: the non-priority move just executed may have added an AfterMove listener.
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.AfterMove))) != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag =
+                _runAfterMovePhase(config, battle, rng, otherPlayerIndex, inlineRegenFlags, playerSwitchForTurnFlag);
 
-            // Always run the global effect's afterMove hook(s)
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    otherPlayerIndex,
-                    EffectStep.AfterMove,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
-                playerSwitchForTurnFlag = _inlineStaminaRegen(
-                    config,
-                    EffectStep.AfterMove,
-                    otherPlayerIndex,
-                    _unpackActiveMonIndex(battle.activeMonIndex, otherPlayerIndex),
-                    0,
-                    0,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            // Round-end effects. Same guard shape as RoundStart: skip the global call with no global
-            // effects, and skip both per-player calls when nothing listens at RoundEnd (union re-read,
-            // since the two moves this turn may have applied a RoundEnd status). Ordering preserved.
-            if (config.globalEffectsLength != 0) {
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    2,
-                    2,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOver,
-                    playerSwitchForTurnFlag
-                );
-            }
-
-            if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
-                // If priority mon is not KOed, run roundEnd effects for the priority mon
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    priorityPlayerIndex,
-                    priorityPlayerIndex,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-
-                // If non priority mon is not KOed, run roundEnd effects for the non priority mon
-                playerSwitchForTurnFlag = _handleEffects(
-                    config,
-                    battle,
-                    rng,
-                    otherPlayerIndex,
-                    otherPlayerIndex,
-                    EffectStep.RoundEnd,
-                    EffectRunCondition.SkipIfGameOverOrMonKO,
-                    playerSwitchForTurnFlag
-                );
-            }
+            playerSwitchForTurnFlag = _runRoundPhase(
+                config, battle, rng, priorityPlayerIndex, otherPlayerIndex, EffectStep.RoundEnd, playerSwitchForTurnFlag
+            );
 
             if (inlineRegenFlags & INLINE_REGEN_ROUND_END != 0) {
                 uint256 p0Mon = _unpackActiveMonIndex(battle.activeMonIndex, 0);
                 uint256 p1Mon = _unpackActiveMonIndex(battle.activeMonIndex, 1);
-                playerSwitchForTurnFlag =
-                    _inlineStaminaRegen(config, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, playerSwitchForTurnFlag);
+                playerSwitchForTurnFlag = _inlineStaminaRegen(
+                    config, battle, EffectStep.RoundEnd, 0, 0, p0Mon, p1Mon, playerSwitchForTurnFlag
+                );
             }
         }
 
@@ -1905,17 +1763,14 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 );
             }
             if (!removeAfterRun) {
-                // INVARIANT: every player-effect add folds its bitmap into BOTH routing caches here:
-                // the over-approximate battle-wide outer union and this mon's exact lane. A missed
-                // update would silently skip a live hook. This is the sole player-effect add chokepoint
-                // (stat boosts use their own store).
-                // Global effects (targetIndex == 2) are gated by globalEffectsLength instead, not the union.
+                // INVARIANT: every player-effect add folds its bitmap into this mon's exact lane. A
+                // missed update would silently skip a live hook. This is the sole player-effect add
+                // chokepoint (stat boosts use their own store).
+                // Global effects (targetIndex == 2) are gated by globalEffectsLength instead.
                 if (targetIndex != 2) {
-                    config.playerEffectStepsUnion |= stepsBitmap;
                     uint256 stepLaneShift = _effectStepLaneShift(targetIndex, monIndex);
                     config.playerEffectStepsByMon |= uint256(stepsBitmap) << stepLaneShift;
-                    // Status-lane set: same slot as the union write, so both coalesce into one
-                    // SSTORE. INVARIANT: lane nonzero ⇔ exactly one class-bearing entry on the
+                    // INVARIANT: status lane nonzero ⇔ exactly one class-bearing entry on the
                     // mon; the only clears are _removeEffectAtSlot + startBattle's reset.
                     uint256 statusClass = (stepsBitmap >> STATUS_CLASS_SHIFT) & STATUS_CLASS_MASK;
                     if (statusClass != 0) {
@@ -2047,6 +1902,9 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return ((targetIndex << 3) | monIndex) << 4;
     }
 
+    // Bit 0 of each 16-bit lane in playerEffectStepsByMon.
+    uint256 private constant EFFECT_STEP_LANE_ONES = 0x0001000100010001000100010001000100010001000100010001000100010001;
+    uint256 private constant ALL_BOOST_LANES = 0x1F;
     uint16 private constant EFFECT_RESOLVER_METADATA_BIT = uint16(1) << 15;
     uint256 private constant EFFECT_COMPACT_DATA_BITS = 78;
     uint256 private constant EFFECT_COMPACT_DATA_MASK = (uint256(1) << EFFECT_COMPACT_DATA_BITS) - 1;
@@ -2142,6 +2000,12 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         return uint16(config.playerEffectStepsByMon >> _effectStepLaneShift(targetIndex, monIndex));
     }
 
+    /// @custom:solar-inline always
+    function _anyMonListensAt(BattleConfig storage config, EffectStep step) private view returns (bool) {
+        return config.playerEffectStepsByMon & (EFFECT_STEP_LANE_ONES << uint8(step)) != 0;
+    }
+
+    /// @custom:solar-inline always
     function _monListensAt(BattleConfig storage config, uint256 targetIndex, uint256 monIndex, EffectStep step)
         private
         view
@@ -3386,7 +3250,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // If so, remove the effect and the extra data.
         // Guard each _runEffects so we don't pay its setup (storage re-resolution + count load) when
         // there's provably nothing to run: the switching mon has no effects (count == 0) or no effect
-        // anywhere listens at this step (union bit clear), and the global list is empty.
+        // anywhere listens at this step, and the global list is empty.
         if (!currentMonState.isKnockedOut) {
             uint256 outCount = playerIndex == 0
                 ? _getMonEffectCount(config.packedP0EffectsCount, currentActiveMonIndex)
@@ -3938,6 +3802,99 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         }
     }
 
+    /// @dev Global, then priority, then other player's effects for a round step. Lengths and lanes
+    ///      are re-read each phase because moves and effects can add listeners mid-turn.
+    /// @custom:solar-inline always
+    function _runRoundPhase(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rng,
+        uint256 priorityPlayerIndex,
+        uint256 otherPlayerIndex,
+        EffectStep step,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+        if (config.globalEffectsLength != 0) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config, battle, rng, 2, 2, step, EffectRunCondition.SkipIfGameOver, playerSwitchForTurnFlag
+            );
+        }
+        if (_anyMonListensAt(config, step)) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                priorityPlayerIndex,
+                priorityPlayerIndex,
+                step,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                otherPlayerIndex,
+                otherPlayerIndex,
+                step,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+        }
+    }
+
+    /// @dev One actor's after-move phase: its AfterMove effects, global AfterMove effects, then rest
+    ///      regen. Regen reads the move fresh because effects can rewrite it to a NO_OP mid-turn.
+    /// @custom:solar-inline always
+    function _runAfterMovePhase(
+        BattleConfig storage config,
+        BattleData storage battle,
+        uint256 rng,
+        uint256 playerIndex,
+        uint8 inlineRegenFlags,
+        uint256 prevPlayerSwitchForTurnFlag
+    ) private returns (uint256 playerSwitchForTurnFlag) {
+        playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
+        if (_anyMonListensAt(config, EffectStep.AfterMove)) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                playerIndex,
+                playerIndex,
+                EffectStep.AfterMove,
+                EffectRunCondition.SkipIfGameOverOrMonKO,
+                playerSwitchForTurnFlag
+            );
+        }
+        if (config.globalEffectsLength != 0) {
+            playerSwitchForTurnFlag = _handleEffects(
+                config,
+                battle,
+                rng,
+                2,
+                playerIndex,
+                EffectStep.AfterMove,
+                EffectRunCondition.SkipIfGameOver,
+                playerSwitchForTurnFlag
+            );
+        }
+        if (inlineRegenFlags & INLINE_REGEN_REST != 0) {
+            playerSwitchForTurnFlag = _inlineStaminaRegen(
+                config,
+                battle,
+                EffectStep.AfterMove,
+                playerIndex,
+                _unpackActiveMonIndex(battle.activeMonIndex, playerIndex),
+                0,
+                0,
+                playerSwitchForTurnFlag
+            );
+        }
+    }
+
+    /// @custom:solar-inline always
     function _handleEffects(
         BattleConfig storage config,
         BattleData storage battle,
@@ -3962,7 +3919,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         if (effectIndex == 2) {
             effectsCount = config.globalEffectsLength;
         } else {
-            // The battle-wide union is only the cheap outer gate. This exact mon lane prevents
+            // The all-mons check is only the cheap outer gate. This exact mon lane prevents
             // one listener (including a benched mon's) from routing unrelated active lists.
             if (!_monListensAt(config, effectIndex, monIndex, round)) {
                 return playerSwitchForTurnFlag;
@@ -4456,7 +4413,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
         }
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundStart))) != 0) {
+        if (_anyMonListensAt(config, EffectStep.RoundStart)) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundStart);
             if (battle.winnerIndex != 2) {
                 return 2;
@@ -4548,7 +4505,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 return 2;
             }
         }
-        if ((config.playerEffectStepsUnion & uint16(1 << uint8(EffectStep.RoundEnd))) != 0) {
+        if (_anyMonListensAt(config, EffectStep.RoundEnd)) {
             _runSlotEffectPass(battleKey, config, battle, rng, EffectStep.RoundEnd);
             if (battle.winnerIndex != 2) {
                 return 2;
@@ -5193,6 +5150,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ///      benchmarks, so we resolve it locally here.
     function _inlineStaminaRegen(
         BattleConfig storage config,
+        BattleData storage battle,
         EffectStep round,
         uint256 playerIndex,
         uint256 monIndex,
@@ -5202,7 +5160,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
     ) private returns (uint256 playerSwitchForTurnFlag) {
         playerSwitchForTurnFlag = prevPlayerSwitchForTurnFlag;
         if (round == EffectStep.RoundEnd) {
-            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battleData[battleKeyForWrite].playerSwitchForTurnFlag)) {
+            if (!StaminaRegenLogic._shouldRegenOnRoundEnd(battle.playerSwitchForTurnFlag)) {
                 return playerSwitchForTurnFlag;
             }
             _inlineRegenStaminaForMon(config, 0, p0ActiveMonIndex);
@@ -5223,7 +5181,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         // engine wrongly runs the next turn as a normal both-sides-act turn instead of a forced switch.
         if (koOccurredFlag != 0) {
             koOccurredFlag = 0;
-            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battleData[battleKeyForWrite], 2);
+            (playerSwitchForTurnFlag,) = _checkForGameOverOrKO(config, battle, 2);
         }
     }
 

@@ -178,17 +178,11 @@ struct BattleConfig {
     uint32 p0BoostCounts; //  32
     uint104 p0Salt;
     uint104 p1Salt;
-    // OR of every player (per-mon) effect's stepsBitmap added this battle. Lets the hot step
-    // pipelines (PreDamage / AfterDamage / OnUpdateMonState) skip the whole _runEffects shell when
-    // NO player effect listens at that step — e.g. battles without a Dreamcatcher (OnUpdateMonState)
-    // or Adaptor (PreDamage) listener, which is the common case. Over-approximate: never cleared on
-    // removal (safe — at worst runs a pipeline that finds nothing, as today). Packs into slot 3.
-    uint16 playerEffectStepsUnion; //  16
     // OR of every engine hook's stepsBitmap, set once at startBattle (hooks cannot be added
     // mid-battle). Gates the per-round hook loops: prod battles always carry the gacha hook,
     // which is OnBattleEnd-only, so without this gate every turn pays two pointless
     // engineHooks[i].stepsBitmap probes (~2.2k/turn — measured in ProdPvPGasBenchmark).
-    // Packs into slot 3 with the salts + player union; p0Move/p1Move shift to the next slot
+    // Packs into slot 3 with the salts; p0Move/p1Move shift to the next slot
     // (which also makes the game-over move-slot clear a single-slot write).
     uint16 engineHookStepsUnion; //  16
     // BATTLE_MODE_* (0 = singles). Rides slot 3's spare bits so the per-turn mode gate
