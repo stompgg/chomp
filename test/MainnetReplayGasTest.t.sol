@@ -116,6 +116,11 @@ contract MainnetReplayGasTest is
     uint256[4] P0_IDS = [uint256(1), 5, 7, 6]; // Inutia, Sofabbi, Embursa, Pengym
     uint256[4] P1_IDS = [uint256(5), 7, 4, 7]; // Sofabbi, Embursa, Gorillax, Embursa
 
+    // Tinderclaws hashes address(this) into its self-burn roll, so it must run at the address
+    // that played this game (the 2026-07-14 deployment).
+    uint256 constant EMBURSA_ID = 7;
+    address constant MAINNET_TINDERCLAWS = 0x5856b784dF1C4B70f03260aa405D856761d2feD3;
+
     function setUp() public {
         p0 = vm.addr(P0_PK);
         p1 = vm.addr(P1_PK);
@@ -156,6 +161,8 @@ contract MainnetReplayGasTest is
         deployVolthare(gachaReg);
         deployAurox(gachaReg);
         deployXmon(gachaReg);
+        (,, uint256[] memory embursaAbilities) = gachaReg.getMonData(EMBURSA_ID);
+        vm.etch(MAINNET_TINDERCLAWS, address(uint160(embursaAbilities[0])).code);
         mgr = new SignedCommitManager(IEngine(address(engine)));
         maker = new SignedMatchmaker(engine);
         registry = new TestTeamRegistry();
@@ -165,7 +172,11 @@ contract MainnetReplayGasTest is
         team = new Mon[](4);
         for (uint256 i; i < 4; i++) {
             (, uint256[] memory moves, uint256[] memory abilities) = gachaReg.getMonData(ids[i]);
-            team[i] = Mon({stats: logStats[i], ability: abilities.length > 0 ? abilities[0] : 0, moves: moves});
+            uint256 ability = abilities.length > 0 ? abilities[0] : 0;
+            if (ids[i] == EMBURSA_ID) {
+                ability = ((ability >> 160) << 160) | uint256(uint160(MAINNET_TINDERCLAWS));
+            }
+            team[i] = Mon({stats: logStats[i], ability: ability, moves: moves});
         }
     }
 

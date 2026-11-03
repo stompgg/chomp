@@ -368,6 +368,7 @@ contract MulongTest is Test {
         // Same field, but with a storm up before the strike.
         Mon[] memory aTeam = new Mon[](3);
         aTeam[0] = _withSecond(_mkMon(2000, 100, IMoveSet(address(summonStorm)), address(0)), cloudStrike);
+        aTeam[0].stats.stamina = 6; // Summon Storm + Cloud Strike, with no regen in this ruleset
         aTeam[1] = _mkMon(2000, 50, filler, address(0));
         aTeam[2] = _mkMon(2000, 40, filler, address(0));
         Mon[] memory bTeam = new Mon[](3);
@@ -379,11 +380,12 @@ contract MulongTest is Test {
 
         engine.executeWithSlotMoves(battleKey, _side(0, 0, NO_OP_MOVE_INDEX, 0), _rest());
         int32 beforeStrike = _hp(1, 0);
+        int32 stormTick = -beforeStrike;
         engine.executeWithSlotMoves(battleKey, _side(1, targetBits(B0), NO_OP_MOVE_INDEX, 0), _rest());
-        int32 stormedStrikePlusTick = beforeStrike - _hp(1, 0);
+        int32 stormedStrike = beforeStrike - _hp(1, 0) - stormTick;
 
         assertTrue(_stormIsUp(), "storm active for the strike");
-        assertTrue(stormedStrikePlusTick > -plain, "storm-boosted Cloud Strike hits harder");
+        assertTrue(stormedStrike > -plain, "storm-boosted Cloud Strike hits harder");
     }
 
     function test_cloudStrike_basePowerReflectsStorm() public {
