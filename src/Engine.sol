@@ -2223,10 +2223,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return;
         }
         _setBoostCountOf(config, targetIndex, monIndex, 0);
-
-        // Telescope back to base stats.
-        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
-        _applyBoostedStats(config, targetIndex, monIndex, baseStats, baseStats);
+        _applyBoostLanes(config, targetIndex, monIndex, 0, ALL_BOOST_LANES);
     }
 
     function _getStatBoostBaseStats(BattleConfig storage config, uint256 targetIndex, uint256 monIndex)
@@ -2284,43 +2281,29 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint168 key
     ) private {
         BattleConfig storage config = battleConfig[storageKeyForWrite];
-        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
         mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
         uint256 count = _boostCountOf(config, targetIndex, monIndex);
         uint256 baseSlot = monIndex * 16;
 
-        // Find an existing same-key/same-permanence source (header-only reads — no lane unpack).
-        bool found;
-        uint256 foundIdx;
-        bytes32 oldWord;
+        // Merge into an existing same-key/same-permanence source if there is one.
         for (uint256 i; i < count; ++i) {
             bytes32 w = words[baseSlot + i];
             (bool wPerm, uint168 wKey) = StatBoostLib.unpackBoostHeader(w);
             if (wKey == key && wPerm == isPerm) {
-                found = true;
-                foundIdx = i;
-                oldWord = w;
-                break;
+                bytes32 merged = StatBoostLib.mergeIntoWord(w, statBoostsToApply);
+                words[baseSlot + i] = merged;
+                _applyBoostLanes(config, targetIndex, monIndex, count, StatBoostLib.laneMask(uint256(w ^ merged)));
+                return;
             }
         }
 
-        bytes32 newWord;
-        if (found) {
-            (,, uint8[5] memory ep, uint8[5] memory ec, bool[5] memory em) = StatBoostLib.unpackBoostData(oldWord);
-            (uint8[5] memory fp, uint8[5] memory fc, bool[5] memory fm) =
-                StatBoostLib.mergeExistingAndNewBoosts(ep, ec, em, statBoostsToApply);
-            newWord = StatBoostLib.packBoostDataWithArrays(key, isPerm, fp, fc, fm);
-            words[baseSlot + foundIdx] = newWord;
-        } else {
-            if (count == 15) {
-                revert InvalidBattleConfig();
-            }
-            newWord = StatBoostLib.packBoostData(key, isPerm, statBoostsToApply);
-            words[baseSlot + count] = newWord;
-            _setBoostCountOf(config, targetIndex, monIndex, count + 1);
+        if (count == 15) {
+            revert InvalidBattleConfig();
         }
-
-        _applyStatBoostAggregates(config, targetIndex, monIndex, baseStats);
+        bytes32 fresh = StatBoostLib.packFreshWord(key, isPerm, statBoostsToApply);
+        words[baseSlot + count] = fresh;
+        _setBoostCountOf(config, targetIndex, monIndex, count + 1);
+        _applyBoostLanes(config, targetIndex, monIndex, count + 1, StatBoostLib.laneMask(uint256(fresh)));
     }
 
     function _removeStatBoostWithKey(uint256 targetIndex, uint256 monIndex, uint168 key, bool isPerm) private {
@@ -2341,104 +2324,73 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 words[baseSlot + i] = words[baseSlot + last];
             }
             _setBoostCountOf(config, targetIndex, monIndex, last);
-
-            _applyStatBoostAggregates(
-                config, targetIndex, monIndex, _getStatBoostBaseStats(config, targetIndex, monIndex)
-            );
+            _applyBoostLanes(config, targetIndex, monIndex, last, StatBoostLib.laneMask(uint256(w)));
             return;
         }
     }
 
-    /// @dev Recompute the mon's aggregate from its source words (the add/remove scans have
-    ///      already warmed them) and telescope the deltas. The packed accumulator is the exact
-    ///      fast form of the legacy aggregation; on lane overflow the legacy unchecked math is
-    ///      the fallback, so both branches agree with the old accumulator-cache results.
-    function _applyStatBoostAggregates(
-        BattleConfig storage config,
-        uint256 targetIndex,
-        uint256 monIndex,
-        uint32[5] memory baseStats
-    ) private {
-        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
-        uint256 count = _boostCountOf(config, targetIndex, monIndex);
-        uint256 baseSlot = monIndex * 16;
-        uint256 acc;
-        bool ok = true;
-        for (uint256 i; i < count && ok; ++i) {
-            (acc, ok) = StatBoostLib.applyWordToAcc(acc, words[baseSlot + i], baseStats, true);
+    /// @dev Boosted value of stat lane k across the mon's `count` sources.
+    /// @custom:solar-inline always
+    function _boostedLane(
+        mapping(uint256 => bytes32) storage words,
+        uint256 baseSlot,
+        uint256 count,
+        uint256 k,
+        uint32 base
+    ) private view returns (uint32) {
+        uint256 num = base;
+        uint256 total;
+        for (uint256 i; i < count; ++i) {
+            (num, total) = StatBoostLib.foldLane(num, total, words[baseSlot + i], k);
         }
-        uint32[5] memory newBoostedStats;
-        if (ok) {
-            newBoostedStats = StatBoostLib.finalizeAccStats(acc, baseStats);
-        } else {
-            uint32[5] memory numBoostsPerStat;
-            uint256[5] memory accumulatedNumeratorPerStat;
-            for (uint256 i; i < count; ++i) {
-                (,, uint8[5] memory bp, uint8[5] memory bc, bool[5] memory im) =
-                    StatBoostLib.unpackBoostData(words[baseSlot + i]);
-                StatBoostLib.accumulateBoosts(baseStats, bp, bc, im, numBoostsPerStat, accumulatedNumeratorPerStat);
-            }
-            newBoostedStats =
-                StatBoostLib.finalizeBoostedStats(baseStats, numBoostsPerStat, accumulatedNumeratorPerStat);
-        }
-        _applyBoostedStats(config, targetIndex, monIndex, baseStats, newBoostedStats);
+        return StatBoostLib.finalizeLane(num, total, base);
     }
 
-    /// @dev Re-apply a mon's aggregated stat boosts by telescoping its monState deltas. The
-    ///      stat-boost system is the sole writer of the 5 stat-delta fields, so the current delta
-    ///      *is* the previous boost contribution (cleared == sentinel == 0): old boosted stat =
-    ///      base + currentDelta. We compute the new boosted stat and feed the difference through
-    ///      _updateMonStateInternal, which fires OnUpdateMonState for listeners exactly as before.
-    ///      No globalKV snapshot is kept — being inside the Engine we read the delta back directly.
-    function _applyBoostedStats(
+    /// @dev Applies a change to the mon's boost sources. Only `lanes` are recomputed: the boost
+    ///      system is the sole writer of these deltas, so every other lane is already current.
+    ///      MonStats and MonState share lane offsets, so one shift addresses both words.
+    function _applyBoostLanes(
         BattleConfig storage config,
         uint256 targetIndex,
         uint256 monIndex,
-        uint32[5] memory baseStats,
-        uint32[5] memory newBoostedStats
+        uint256 count,
+        uint256 lanes
     ) private {
-        MonState storage st = _getMonState(config, targetIndex, monIndex);
-
-        // Listener gate hoisted ONCE per apply (was paid inside _updateMonStateInternal per stat).
-        // OnUpdateMonState has a single listener game-wide, so the common case takes the direct-
-        // write path: the stat-boost system is the sole writer of these 5 deltas (updateMonState
-        // reverts StatRequiresStatBoost for them), so the stored delta after any telescoped op is
-        // exactly newBoosted - base — writing that directly is bit-identical to the dispatcher's
-        // sentinel-aware add, minus its 2 TLOADs + 2 mapping keccaks + enum chain per stat.
+        // Listeners can reenter, so they keep the compute-all-then-apply order.
         if (_monListensAt(config, targetIndex, monIndex, EffectStep.OnUpdateMonState)) {
-            for (uint256 i; i < 5; ++i) {
-                // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
-                int32 valueToAdd = int32(newBoostedStats[i]) - int32(baseStats[i]) - _statBoostCurrentDelta(st, i);
-                if (valueToAdd != 0) {
-                    _updateMonStateInternal(
-                        targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(i), valueToAdd
-                    );
-                }
-            }
+            _applyBoostsWithListeners(config, targetIndex, monIndex, count);
             return;
         }
 
-        // Direct path: one read-modify-write of the packed MonState word for all five lanes.
-        // Lane offsets follow the MonState layout (hp 0, stamina 32, speed 64, attack 96,
-        // defence 128, spAtk 160, spDef 192); boost index 4 is speed, 0-3 map to attack..spDef.
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 baseSlot = monIndex * 16;
+        MonStats storage stats = _getTeamMon(config, targetIndex, monIndex).stats;
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
+        uint256 statsWord;
         uint256 word;
         assembly ("memory-safe") {
+            statsWord := sload(stats.slot)
             word := sload(st.slot)
         }
         uint256 original = word;
         bool speedChanged;
-        for (uint256 i; i < 5; ++i) {
-            uint256 shift = i == 4 ? 64 : 96 + (i << 5);
+        for (uint256 k; k < 5; ++k) {
+            if ((lanes >> k) & 1 == 0) {
+                continue;
+            }
+            // Boost index 4 is speed; 0-3 map to attack..spDef.
+            uint256 shift = k == 4 ? 64 : 96 + (k << 5);
+            uint32 base = uint32(statsWord >> shift);
             int32 current = int32(uint32(word >> shift));
             if (current == CLEARED_MON_STATE_SENTINEL) {
                 current = 0;
             }
-            int32 newDelta = int32(newBoostedStats[i]) - int32(baseStats[i]);
+            int32 newDelta = int32(_boostedLane(words, baseSlot, count, k, base)) - int32(base);
             if (newDelta == current) {
                 continue;
             }
             word = (word & ~(uint256(0xFFFFFFFF) << shift)) | (uint256(uint32(newDelta)) << shift);
-            if (i == 4) {
+            if (k == 4) {
                 speedChanged = true;
             }
         }
@@ -2448,6 +2400,33 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             }
             if (speedChanged && config.battleMode != BATTLE_MODE_SINGLES) {
                 _markActiveMonSpeedDirty(targetIndex, monIndex);
+            }
+        }
+    }
+
+    /// @dev Computes all five stats up front, then feeds each difference through
+    ///      _updateMonStateInternal so OnUpdateMonState fires per stat, in lane order.
+    function _applyBoostsWithListeners(
+        BattleConfig storage config,
+        uint256 targetIndex,
+        uint256 monIndex,
+        uint256 count
+    ) private {
+        mapping(uint256 => bytes32) storage words = _boostWordsOf(config, targetIndex);
+        uint256 baseSlot = monIndex * 16;
+        uint32[5] memory baseStats = _getStatBoostBaseStats(config, targetIndex, monIndex);
+        uint32[5] memory boosted;
+        for (uint256 k; k < 5; ++k) {
+            boosted[k] = _boostedLane(words, baseSlot, count, k, baseStats[k]);
+        }
+        MonState storage st = _getMonState(config, targetIndex, monIndex);
+        for (uint256 k; k < 5; ++k) {
+            // old boosted = base + current stat-boost delta (sentinel reads as 0 / "no boost")
+            int32 valueToAdd = int32(boosted[k]) - int32(baseStats[k]) - _statBoostCurrentDelta(st, k);
+            if (valueToAdd != 0) {
+                _updateMonStateInternal(
+                    targetIndex, monIndex, StatBoostLib.statBoostIndexToMonStateIndex(k), valueToAdd
+                );
             }
         }
     }
@@ -2478,6 +2457,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
         uint256 count = _boostCountOf(config, targetIndex, monIndex);
         uint256 baseSlot = monIndex * 16;
         uint256 kept = count;
+        uint256 expired;
         uint256 i;
         while (i < kept) {
             bytes32 w = words[baseSlot + i];
@@ -2485,6 +2465,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
                 ++i;
                 continue;
             }
+            expired |= uint256(w);
             --kept;
             if (i != kept) {
                 words[baseSlot + i] = words[baseSlot + kept];
@@ -2494,7 +2475,7 @@ contract Engine is IEngine, MappingAllocator, EIP712 {
             return; // nothing expired: no writes, no telescope
         }
         _setBoostCountOf(config, targetIndex, monIndex, kept);
-        _applyStatBoostAggregates(config, targetIndex, monIndex, _getStatBoostBaseStats(config, targetIndex, monIndex));
+        _applyBoostLanes(config, targetIndex, monIndex, kept, StatBoostLib.laneMask(expired));
     }
 
     function setGlobalKV(uint64 key, uint192 value) external {

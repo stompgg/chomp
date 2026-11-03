@@ -70,9 +70,7 @@ contract StatBoostAccParity is Test {
         // End to end: a 255% Divide folds in, stays invertible, and both paths agree.
         uint32[5] memory baseStats = [uint32(100), 100, 100, 100, 100];
         StatBoostToApply[] memory boosts = new StatBoostToApply[](1);
-        boosts[0] = StatBoostToApply({
-            stat: MonStateIndexName(2), boostPercent: 255, boostType: StatBoostType.Divide
-        });
+        boosts[0] = StatBoostToApply({stat: MonStateIndexName(2), boostPercent: 255, boostType: StatBoostType.Divide});
         bytes32[] memory words = new bytes32[](1);
         words[0] = StatBoostLib.packBoostData(uint168(1), true, boosts);
 
@@ -95,6 +93,77 @@ contract StatBoostAccParity is Test {
 
     function testFuzz_accMatchesRecompute(uint256 seed, uint8 numSourcesRaw, uint16 baseRaw) public pure {
         _run(seed, numSourcesRaw, baseRaw);
+    }
+
+    function packFreshWord(uint168 key, bool perm, StatBoostToApply[] calldata boosts) external pure returns (bytes32) {
+        return StatBoostLib.packFreshWord(key, perm, boosts);
+    }
+
+    function mergeIntoWord(bytes32 word, StatBoostToApply[] calldata boosts) external pure returns (bytes32) {
+        return StatBoostLib.mergeIntoWord(word, boosts);
+    }
+
+    function _mkBoosts(uint256 seed, uint256 n) internal pure returns (StatBoostToApply[] memory boosts) {
+        boosts = new StatBoostToApply[](n);
+        for (uint256 i; i < n; ++i) {
+            uint256 s = uint256(keccak256(abi.encode(seed, "b", i)));
+            boosts[i] = StatBoostToApply({
+                stat: MonStateIndexName(uint8(2 + (s & 0xFF) % 5)),
+                boostPercent: uint8(s >> 8),
+                boostType: (s >> 16) & 1 == 0 ? StatBoostType.Multiply : StatBoostType.Divide
+            });
+        }
+    }
+
+    /// The per-lane fold must equal the accumulator-with-fallback for arbitrary source words,
+    /// including stack counts and products that overflow the accumulator's lanes.
+    function testFuzz_laneFoldMatchesFullAggregate(bytes32 seed, uint8 nRaw, uint32 base) public pure {
+        vm.assume(base != 0 && base <= uint32(type(int32).max));
+        uint32[5] memory baseStats = [base, base, base, base, base];
+        bytes32[] memory words = new bytes32[](nRaw % 16);
+        uint256 acc;
+        bool ok = true;
+        for (uint256 i; i < words.length; ++i) {
+            words[i] = keccak256(abi.encode(seed, i));
+            if (ok) {
+                (acc, ok) = StatBoostLib.applyWordToAcc(acc, words[i], baseStats, true);
+            }
+        }
+        uint32[5] memory full =
+            ok ? StatBoostLib.finalizeAccStats(acc, baseStats) : _referenceStats(words, type(uint256).max, baseStats);
+        for (uint256 k; k < 5; ++k) {
+            uint256 num = base;
+            uint256 total;
+            for (uint256 i; i < words.length; ++i) {
+                (num, total) = StatBoostLib.foldLane(num, total, words[i], k);
+            }
+            assertEq(StatBoostLib.finalizeLane(num, total, base), full[k], "lane parity");
+        }
+    }
+
+    function testFuzz_packFreshWordMatchesPackBoostData(uint168 key, bool perm, uint256 seed, uint8 nRaw) public view {
+        StatBoostToApply[] memory boosts = _mkBoosts(seed, nRaw % 8);
+        assertEq(this.packFreshWord(key, perm, boosts), StatBoostLib.packBoostData(key, perm, boosts));
+    }
+
+    function testFuzz_mergeIntoWordMatchesArrayMerge(bytes32 lanes, uint168 key, bool perm, uint256 seed, uint8 nRaw)
+        public
+        view
+    {
+        bytes32 word = StatBoostLib.packBoostData(key, perm, new StatBoostToApply[](0));
+        word = word | (lanes & bytes32((uint256(1) << 80) - 1));
+        StatBoostToApply[] memory boosts = _mkBoosts(seed, nRaw % 8);
+        (,, uint8[5] memory p, uint8[5] memory c, bool[5] memory m) = StatBoostLib.unpackBoostData(word);
+        (p, c, m) = StatBoostLib.mergeExistingAndNewBoosts(p, c, m, boosts);
+        assertEq(this.mergeIntoWord(word, boosts), StatBoostLib.packBoostDataWithArrays(key, perm, p, c, m));
+    }
+
+    function test_laneMask() public pure {
+        assertEq(StatBoostLib.laneMask(0), 0);
+        assertEq(StatBoostLib.laneMask(1), 1);
+        assertEq(StatBoostLib.laneMask(uint256(0x8000) << 64), 16);
+        assertEq(StatBoostLib.laneMask((uint256(1) << 80) - 1), 31);
+        assertEq(StatBoostLib.laneMask(uint256(1) << 80), 0, "header bits are not lanes");
     }
 
     function _run(uint256 seed, uint8 numSourcesRaw, uint16 baseRaw) internal pure {

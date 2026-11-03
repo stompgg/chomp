@@ -383,15 +383,16 @@ round-trips.)
 
 How it works:
 - Each boost **source** is one packed word in a dedicated per-mon boost store
-  (`p0BoostWords`/`p1BoostWords`; 4-bit counts in `p0/p1BoostCounts`; the aggregate is recomputed
-  from the words on every change) — NOT an effect-list entry, so effect passes never iterate boost sources.
+  (`p0BoostWords`/`p1BoostWords`; 4-bit counts in `p0/p1BoostCounts`; each change recomputes only
+  the stat lanes it touched, from the words) — NOT an effect-list entry, so effect passes never iterate boost sources.
   Sources are keyed by `msg.sender`, so each move/ability/effect
   stacks independently and can remove its own boost. Boosts are **multiplicative** per source; `Temp`
   boosts are dropped on switch-out by a direct `_inlineStatBoostSwitchOut` call in `_handleSwitch`,
   `Perm` ones persist.
 - Boosts apply only to the 5 stat deltas: `Speed`, `Attack`, `Defense`, `SpecialAttack`,
   `SpecialDefense`. There is **no globalKV snapshot** — the Engine telescopes off the live `monState`
-  delta (`new boosted − base − currentDelta`) and fires `OnUpdateMonState` like any other delta write.
+  delta. Without `OnUpdateMonState` listeners it writes changed lanes directly; with them it computes
+  all five stats first, then fires the hook per stat in lane order.
 - **Ownership invariant:** the stat-boost system is the *sole* writer of those 5 deltas. External
   `updateMonState` calls with `Speed`..`SpecialDefense` **revert with `StatRequiresStatBoost`** — to
   change a stat you must go through `add`/`removeStatBoost`, never `updateMonState`. (`Hp`, `Stamina`,
