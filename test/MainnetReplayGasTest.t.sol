@@ -875,6 +875,31 @@ contract MainnetReplayGasTest is
         console.log("  whole no-op game, 1 batch of 27    :", t27);
     }
 
+    /// @dev The same game at per-transaction prices: every turn pays its own first-touch storage cost,
+    ///      which is what a PvP game costs and a single batch hides.
+    function test_mainnetReplay_perTurnTx() public {
+        vm.warp(vm.getBlockTimestamp() + 1);
+        bytes32 key1 = _startBattle();
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _replayOneTx(key1, false);
+
+        bytes32 key2 = _startBattle();
+        require(engine.getStorageKey(key1) == engine.getStorageKey(key2), "storageKey must be reused");
+        vm.warp(vm.getBlockTimestamp() + 1);
+        uint256[] memory entries = _entries();
+        uint256[] memory one = new uint256[](1);
+        uint256 total;
+        for (uint256 i; i < entries.length; ++i) {
+            one[0] = entries[i];
+            vm.cool(address(engine));
+            total += _execBatch(key2, one);
+        }
+        require(engine.getWinner(key2) != address(0), "per-turn replay must reach game over");
+
+        vm.snapshotValue("MainnetReplay_PerTurnTx_rawGas", total);
+        console.log("PER-TURN replay (one tx per turn) rawGas :", total);
+    }
+
     function test_mainnetReplay_batchedExecute() public {
         vm.warp(vm.getBlockTimestamp() + 1);
 
