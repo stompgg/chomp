@@ -1146,6 +1146,55 @@ class TestTypeCastGeneration(unittest.TestCase):
         self.assertIn('return x;', output)
         self.assertNotIn('BigInt(x)', output)
 
+    def _generate(self, source):
+        return TypeScriptCodeGenerator().generate(Parser(Lexer(source).tokenize()).parse())
+
+    def test_bytes32_bitwise_inside_uint_cast(self):
+        """bytesN values are hex strings in TS, so a bitwise op over them must run on bigints."""
+        output = self._generate('''
+        contract TestContract {
+            function diff(bytes32 a, bytes32 b) public pure returns (uint256) {
+                return uint256(a ^ b);
+            }
+            function both(bytes32 a, bytes32 b) public pure returns (uint256) {
+                return uint256(a & b);
+            }
+            function either(bytes32 a, bytes32 b) public pure returns (uint256) {
+                return uint256(a | b);
+            }
+        }
+        ''')
+        self.assertIn('(BigInt(a) ^ BigInt(b))', output)
+        self.assertIn('(BigInt(a) & BigInt(b))', output)
+        self.assertIn('(BigInt(a) | BigInt(b))', output)
+        self.assertNotIn('a ^ b', output)
+
+    def test_bytes32_bitwise_over_locals(self):
+        """Local declarations carry the bytesN type too, not only parameters."""
+        output = self._generate('''
+        contract TestContract {
+            mapping(uint256 => bytes32) words;
+            function changed(uint256 i, bytes32 next) public view returns (uint256) {
+                bytes32 w = words[i];
+                bytes32 merged = next;
+                return uint256(w ^ merged);
+            }
+        }
+        ''')
+        self.assertIn('(BigInt(w) ^ BigInt(merged))', output)
+
+    def test_uint_bitwise_inside_uint_cast_is_untouched(self):
+        """Integer operands are already bigints and must not be re-wrapped."""
+        output = self._generate('''
+        contract TestContract {
+            function diff(uint256 a, uint256 b) public pure returns (uint256) {
+                return uint256(a ^ b);
+            }
+        }
+        ''')
+        self.assertIn('a ^ b', output)
+        self.assertNotIn('BigInt(a)', output)
+
     def test_address_cast(self):
         """Test address type cast."""
         source = '''
