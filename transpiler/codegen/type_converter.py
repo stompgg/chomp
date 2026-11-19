@@ -6,6 +6,7 @@ resolution, mapping/index handling, ABI type mapping) that the generators rely
 on. It is the single source of truth for type questions during emission.
 """
 
+import re
 from typing import Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -258,16 +259,25 @@ class TypeConverter(BaseGenerator):
                 return self._lazy_record_proxy(ts_type, f'createDefault{struct_name}()')
         return '{}'
 
-    @staticmethod
-    def _lazy_record_proxy(ts_type: str, value_default: str) -> str:
-        """Proxy that materializes ``value_default`` on first read of any string key."""
-        return (
-            f'new Proxy({{}} as {ts_type}, '
-            f'{{ get: (t, k) => {{ '
-            f'if (typeof k === "string" && !(k in t)) t[k] = {value_default}; '
-            f'return t[k as any]; '
-            f'}} }})'
-        )
+    # A bare default-factory call (`createDefaultFoo()`, `Structs.createDefaultFoo()`).
+    _FACTORY_CALL_RE = re.compile(r'((?:[A-Za-z_$][\w$]*\.)*createDefault\w+)\(\)')
+    # Primitive zeros: bigint / boolean / string literals with no interpolation.
+    _PRIMITIVE_ZERO_RE = re.compile(r'\d+n|true|false|"[^"\\`$]*"|\'[^\'\\`$]*\'')
+
+    @classmethod
+    def _lazy_record_proxy(cls, ts_type: str, value_default: str) -> str:
+        """Record that materializes ``value_default`` on first read of a missing string key.
+
+        The runtime shares one prototype per stable factory / primitive zero; any other default
+        (a nested mapping) gets a per-record closure.
+        """
+        value_ts = ts_type[len('Record<string, '):-1] if ts_type.startswith('Record<string, ') else 'any'
+        factory = cls._FACTORY_CALL_RE.fullmatch(value_default)
+        if factory is not None:
+            return f'__lazyRecord<{value_ts}>({factory.group(1)})'
+        if cls._PRIMITIVE_ZERO_RE.fullmatch(value_default) is not None:
+            return f'__lazyZeroRecord<{value_ts}>({value_default})'
+        return f'__lazyRecordOf<{value_ts}>(() => {value_default})'
 
     # =========================================================================
     # TYPE CAST GENERATION
@@ -318,7 +328,7 @@ class TypeConverter(BaseGenerator):
                 return f'`0x${{({expr}).toString(16).padStart(40, "0")}}`'
 
             # Handle address(someContract) -> someContract._contractAddress
-            if expr != 'this' and not expr.startswith('"') and not expr.startswith("'"):
+            if expr not in ('this', 'this._proxy') and not expr.startswith('"') and not expr.startswith("'"):
                 return f'{expr}._contractAddress'
 
         # Handle bytes32 literals and expressions
@@ -360,8 +370,15 @@ class TypeConverter(BaseGenerator):
         # For numeric types (uint160, int128, etc.), mask to the correct bit width.
         # Solidity truncates on cast; BigInt does not, so we must mask explicitly.
         if type_name.startswith('uint') or type_name.startswith('int'):
-            expr = generate_expression_fn(inner_expr)
-            bigint_expr = self._ensure_bigint(expr, inner_expr)
+            bytes_bitwise = self._bytes_bitwise_as_bigint(inner_expr, generate_expression_fn)
+            if bytes_bitwise is not None:
+                bigint_expr = bytes_bitwise
+            else:
+                expr = generate_expression_fn(inner_expr)
+                if expr.startswith('keccak256(') and self._is_single_group(expr[len('keccak256'):]):
+                    bigint_expr = '__keccakWord' + expr[len('keccak256'):]
+                else:
+                    bigint_expr = self._ensure_bigint(expr, inner_expr)
             # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
             width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
             if width_str.isdigit():
@@ -379,6 +396,22 @@ class TypeConverter(BaseGenerator):
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
 
+    def _bytes_bitwise_as_bigint(self, node: 'Expression', generate_expression_fn) -> Optional[str]:
+        """``a ^ b`` / ``a & b`` / ``a | b`` over fixed-bytes values, as a bigint expression.
+
+        bytesN values are hex strings in TS, where a bitwise operator would coerce them to int32.
+        """
+        if not (isinstance(node, BinaryOperation) and node.operator in ('^', '&', '|')):
+            return None
+        for side in (node.left, node.right):
+            resolved = self.resolve_access_type(side)
+            name = (resolved.name or '') if resolved is not None else ''
+            if not name.startswith('bytes') or resolved.is_array:
+                return None
+        left = generate_expression_fn(node.left)
+        right = generate_expression_fn(node.right)
+        return f'(BigInt({left}) {node.operator} BigInt({right}))'
+
     def _ensure_bigint(self, expr: str, node: 'Expression') -> str:
         """Wrap expression in BigInt() only if it's not already a bigint expression.
 
@@ -390,9 +423,16 @@ class TypeConverter(BaseGenerator):
         # Already a bigint literal (e.g., 0n, 123n)
         if expr.endswith('n') and (expr[:-1].isdigit() or expr.startswith('0x')):
             return expr
-        # Already a bigint expression (mask, shift, or other bitwise op)
+        # Already a bigint expression (mask, shift, or other bitwise op). The caller splices the
+        # result next to `& mask`, so anything but a single parenthesized group gets its own parens.
         if expr.startswith('(') and ('n)' in expr or '1n' in expr):
-            return expr
+            return expr if self._is_single_group(expr) else f'({expr})'
+        # A shift / bitwise / multiplicative op with a statically-bigint operand: JS throws on
+        # mixed operands, so the result is a bigint.
+        if (isinstance(node, BinaryOperation)
+                and node.operator in ('>>', '<<', '&', '|', '^', '*', '/', '%')
+                and any(self._is_static_bigint(side) for side in (node.left, node.right))):
+            return f'({expr})'
         # Statically bigint by type: a uint/int identifier, or a member access that
         # resolves to a numeric field (both transpile to bigint).
         if isinstance(node, Identifier) and self.is_bigint_typed_identifier(node):
@@ -403,6 +443,31 @@ class TypeConverter(BaseGenerator):
                     and (resolved.name.startswith('uint') or resolved.name.startswith('int'))):
                 return expr
         return f'BigInt({expr})'
+
+    def _is_static_bigint(self, node: 'Expression') -> bool:
+        """An integer literal, a uint/int identifier, or a member that resolves to a numeric field."""
+        if isinstance(node, Literal):
+            return node.kind in ('number', 'hex')
+        if isinstance(node, Identifier):
+            return self.is_bigint_typed_identifier(node)
+        if isinstance(node, MemberAccess):
+            resolved = self.resolve_access_type(node)
+            return (resolved is not None and not resolved.is_array and not resolved.is_mapping
+                    and (resolved.name.startswith('uint') or resolved.name.startswith('int')))
+        return False
+
+    @staticmethod
+    def _is_single_group(expr: str) -> bool:
+        """True when ``expr``'s opening paren closes at its very end (one enclosing group)."""
+        depth = 0
+        for i, ch in enumerate(expr):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+                if depth == 0:
+                    return i == len(expr) - 1
+        return False
 
     def _is_already_address_type(self, expr: Expression) -> bool:
         """Whether ``address(expr)`` is an identity cast (expr already an address), so no

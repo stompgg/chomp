@@ -679,7 +679,7 @@ class YulTranspiler:
             bits = t[3:] or '256'
             return f'BigInt.asUintN({bits}, BigInt({access}))'
         # enums are numbers; every other user-defined name is a contract ref
-        return f'BigInt({access}?._contractAddress ?? {access} ?? 0n)'
+        return f'__addrWord({access})'
 
     @staticmethod
     def _member_unpack(word: str, tn, bits: int) -> Optional[str]:
@@ -1090,6 +1090,8 @@ class YulTranspiler:
     def _generate_literal(self, lit: YulLiteral) -> str:
         """Generate TypeScript for a Yul literal."""
         if lit.kind == 'hex':
+            if re.fullmatch(r'0x[0-9a-fA-F]+', lit.value) is not None:
+                return f'{lit.value}n'
             return f'BigInt("{lit.value}")'
         elif lit.kind == 'number':
             return f'{lit.value}n'

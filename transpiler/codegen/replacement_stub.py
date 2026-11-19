@@ -240,7 +240,7 @@ class ReplacementStubGenerator:
         if init.kind == 'hex':
             # Hex literal like 0x... used as bigint or bytes32
             if ts_type == 'bigint':
-                return f'BigInt("{init.value}")'
+                return f'{init.value}n'
             return f"'{init.value}'"
         if init.kind == 'hex_string':
             return f"'0x{init.value}'"

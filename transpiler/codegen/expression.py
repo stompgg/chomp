@@ -6,6 +6,7 @@ AST nodes, including literals, identifiers, operators, function calls, and
 member/index access.
 """
 
+import re
 from typing import Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -33,6 +34,9 @@ from ..parser.ast_nodes import (
     TypeCast,
     TypeName,
 )
+
+
+_HEX_LITERAL_RE = re.compile(r'0x[0-9a-fA-F]+')
 
 
 class ExpressionGenerator(BaseGenerator):
@@ -137,14 +141,17 @@ class ExpressionGenerator(BaseGenerator):
     def generate_literal(self, lit: Literal) -> str:
         """Generate TypeScript code for a literal."""
         if lit.kind == 'number':
-            # Use bigint literal syntax (Xn) which is more efficient than BigInt(X)
-            # For large numbers (> 2^53), use BigInt("X") to avoid precision loss
+            # Bigint literal syntax (Xn) is exact at any width and, unlike BigInt("X"), is not
+            # re-parsed from a string on every evaluation.
             clean_value = lit.value.replace('_', '')
             if len(clean_value) > 15:
+                if clean_value.isdigit():
+                    return f'{clean_value}n'
                 return f'BigInt("{lit.value}")'
             return f'{lit.value}n'
         elif lit.kind == 'hex':
-            # Hex literals: 0x... -> BigInt("0x...")
+            if _HEX_LITERAL_RE.fullmatch(lit.value) is not None:
+                return f'{lit.value}n'
             return f'BigInt("{lit.value}")'
         elif lit.kind == 'hex_string':
             # Hex string literals: hex"0f" -> "0x0f"
@@ -184,7 +191,9 @@ class ExpressionGenerator(BaseGenerator):
                 return '{ origin: ADDRESS_ZERO }'
             return 'this._tx'
         elif name == 'this':
-            return 'this'
+            # `this` escaping as a value must be the msg.sender-propagating proxy: methods may
+            # run with the raw instance as `this` (see Contract's constructor in runtime/base.ts).
+            return 'this._proxy'
 
         # Add ClassName. prefix for static constants (check before global constants)
         if name in self._ctx.current_static_vars:
@@ -604,14 +613,14 @@ class ExpressionGenerator(BaseGenerator):
                     if arg.arguments and len(arg.arguments) == 1:
                         inner_arg = arg.arguments[0]
                         if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
-                            return '(this as any)'
+                            return '(this._proxy as any)'
                         inner_expr = self.generate(inner_arg)
                         return f'Contract.at({inner_expr})'
             # Check for TypeCast address(x) pattern
             if isinstance(arg, TypeCast) and arg.type_name.name == 'address':
                 inner_arg = arg.expression
                 if isinstance(inner_arg, Identifier) and inner_arg.name == 'this':
-                    return '(this as any)'
+                    return '(this._proxy as any)'
                 inner_expr = self.generate(inner_arg)
                 return f'Contract.at({inner_expr})'
         if args:
@@ -624,7 +633,10 @@ class ExpressionGenerator(BaseGenerator):
 
     def generate_member_access(self, access: MemberAccess) -> str:
         """Generate TypeScript code for member access."""
-        expr = self.generate(access.expression)
+        if isinstance(access.expression, Identifier) and access.expression.name == 'this':
+            expr = 'this'
+        else:
+            expr = self.generate(access.expression)
         member = access.member
 
         # Handle special cases
