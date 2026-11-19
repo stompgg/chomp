@@ -257,7 +257,7 @@ export { keccak256 } from './base';
 // ABI ENCODING
 // =============================================================================
 
-export { encodePacked, encodeAbiParameters, __ik } from './base';
+export { encodePacked, encodeAbiParameters, decodeAbiParameters, __ik, __lazyRecord, __lazyZeroRecord, __lazyRecordOf } from './base';
 export { parseAbiParameters } from 'viem';
 
 /**

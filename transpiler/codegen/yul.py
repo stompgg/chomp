@@ -1090,6 +1090,8 @@ class YulTranspiler:
     def _generate_literal(self, lit: YulLiteral) -> str:
         """Generate TypeScript for a Yul literal."""
         if lit.kind == 'hex':
+            if re.fullmatch(r'0x[0-9a-fA-F]+', lit.value) is not None:
+                return f'{lit.value}n'
             return f'BigInt("{lit.value}")'
         elif lit.kind == 'number':
             return f'{lit.value}n'

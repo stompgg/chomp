@@ -12,6 +12,7 @@ import {
   keccak256 as viemKeccak256,
   encodePacked as viemEncodePacked,
   encodeAbiParameters as viemEncodeAbiParameters,
+  decodeAbiParameters as viemDecodeAbiParameters,
   toHex,
   hexToBigInt,
 } from 'viem';
@@ -40,6 +41,54 @@ const IK_TABLE: string[] = Array.from({ length: 256 }, (_, i) => String(i));
 export function __ik(v: bigint | number): string {
   const n = Number(v);
   return n >= 0 && n < 256 ? IK_TABLE[n] : String(v);
+}
+
+// =============================================================================
+// LAZY RECORDS (Solidity mappings)
+// =============================================================================
+// An unwritten mapping key reads as the value type's zero. The record is a plain object whose
+// PROTOTYPE is a proxy: only a miss reaches the trap, which materializes the default as an own
+// property — every later read of that key is an ordinary property load.
+
+function lazyProto(make: () => unknown): object {
+  return new Proxy({}, {
+    get(t, k, receiver) {
+      // Symbols and Object.prototype names (constructor, toString, …) are never mapping keys.
+      if (typeof k !== 'string' || k in t) return Reflect.get(t, k, receiver);
+      const v = make();
+      Object.defineProperty(receiver, k, { value: v, writable: true, enumerable: true, configurable: true });
+      return v;
+    },
+  });
+}
+
+// One prototype per default: a stable factory (`createDefaultFoo`) or a primitive zero.
+const LAZY_PROTO_BY_FACTORY = new WeakMap<Function, object>();
+const LAZY_PROTO_BY_ZERO = new Map<unknown, object>();
+
+/** Mapping whose missing keys materialize `make()`. `make` must be a stable reference. */
+export function __lazyRecord<T>(make: () => T): Record<string, T> {
+  let proto = LAZY_PROTO_BY_FACTORY.get(make);
+  if (proto === undefined) {
+    proto = lazyProto(make);
+    LAZY_PROTO_BY_FACTORY.set(make, proto);
+  }
+  return Object.create(proto);
+}
+
+/** Mapping whose missing keys materialize the primitive `zero` (0n, false, a zero hex word). */
+export function __lazyZeroRecord<T>(zero: T): Record<string, T> {
+  let proto = LAZY_PROTO_BY_ZERO.get(zero);
+  if (proto === undefined) {
+    proto = lazyProto(() => zero);
+    LAZY_PROTO_BY_ZERO.set(zero, proto);
+  }
+  return Object.create(proto);
+}
+
+/** Mapping whose default is built by an inline closure (nested mappings): no sharing. */
+export function __lazyRecordOf<T>(make: () => T): Record<string, T> {
+  return Object.create(lazyProto(make));
 }
 
 // =============================================================================
@@ -116,12 +165,95 @@ export function encodeAbiParameters(params: unknown, values: readonly unknown[])
     } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
       out += v.slice(2).padStart(64, '0');
     } else if (t === 'bool') {
-      out += (v ? '1' : '0').padStart(64, '0');
+      out += v ? PAD256_SMALL[1] : PAD256_SMALL[0];
+    } else if (t === 'string' && typeof v === 'string') {
+      return encodeWithStrings(params, values);
     } else {
       return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
     }
   }
   return out as `0x${string}`;
+}
+
+// Tail (length word + right-padded utf8) of a dynamic `string`, keyed by value: the generated
+// code only encodes a handful of constant tags ("SLOT_ACTION", "EFFECT", …).
+const STRING_TAIL = new Map<string, string>();
+function stringTail(v: string): string {
+  let tail = STRING_TAIL.get(v);
+  if (tail === undefined) {
+    const bytes = new TextEncoder().encode(v);
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+    tail = padUint(bytes.length, 256) + hex.padEnd(Math.ceil(bytes.length / 32) * 64, '0');
+    if (STRING_TAIL.size > 1_000) STRING_TAIL.clear();
+    STRING_TAIL.set(v, tail);
+  }
+  return tail;
+}
+
+/** Head/tail form of `encodeAbiParameters` for static words mixed with `string` params. */
+function encodeWithStrings(params: readonly unknown[], values: readonly unknown[]): `0x${string}` {
+  const headBytes = params.length * 32;
+  let head = '';
+  let tail = '';
+  for (let i = 0; i < params.length; i++) {
+    const t = (params[i] as { type?: string })?.type ?? '';
+    const v = values[i];
+    if (t === 'string' && typeof v === 'string') {
+      head += padUint(headBytes + (tail.length >> 1), 256);
+      tail += stringTail(v);
+    } else if (uintWidth(t) > 0 && (typeof v === 'bigint' || typeof v === 'number')) {
+      head += padUint(v, 256);
+    } else if (t === 'bytes32' && typeof v === 'string' && HEX32_RE.test(v)) {
+      head += v.slice(2);
+    } else if (t === 'address' && typeof v === 'string' && ADDR_RE.test(v)) {
+      head += v.slice(2).padStart(64, '0');
+    } else if (t === 'bool') {
+      head += v ? PAD256_SMALL[1] : PAD256_SMALL[0];
+    } else {
+      return viemEncodeAbiParameters(params as never, values as never) as `0x${string}`;
+    }
+  }
+  return ('0x' + head + tail) as `0x${string}`;
+}
+
+const ZEROS52 = '0'.repeat(52);
+const TWO_256 = 1n << 256n;
+const MAX_INT256 = (1n << 255n) - 1n;
+
+/**
+ * `decodeAbiParameters` for payloads that are exactly one word per uintN / intN param (the
+ * effect-hook extraData shapes); anything else goes to viem. Mirrors viem's result types:
+ * widths ≤ 48 bits decode to `number`, wider to `bigint`, signed as 256-bit two's complement.
+ */
+export function decodeAbiParameters(params: unknown, data: `0x${string}`): any {
+  if (Array.isArray(params) && typeof data === 'string' && data.length === 2 + 64 * params.length) {
+    const out: unknown[] = new Array(params.length);
+    let i = 0;
+    for (; i < params.length; i++) {
+      const t = (params[i] as { type?: string })?.type ?? '';
+      const bits = uintWidth(t);
+      if (bits <= 0) break;
+      const at = 2 + 64 * i;
+      if (data.startsWith(ZEROS52, at)) {
+        // Top 208 bits clear → the value fits 48 bits: exact as a double, never negative.
+        const n = parseInt(data.slice(at + 52, at + 64), 16);
+        if (n !== n) break;
+        out[i] = bits > 48 ? BigInt(n) : n;
+      } else {
+        let v: bigint;
+        try {
+          v = BigInt('0x' + data.slice(at, at + 64));
+        } catch {
+          break;
+        }
+        if (t.charCodeAt(0) === 105 /* i: intN */ && v > MAX_INT256) v -= TWO_256;
+        out[i] = bits > 48 ? v : Number(v);
+      }
+    }
+    if (i === params.length) return out;
+  }
+  return viemDecodeAbiParameters(params as never, data as never);
 }
 
 // =============================================================================
@@ -463,6 +595,9 @@ let currentCall: CallContext = { callerStack: [], callDepth: 0, observers: [], e
 
 // address → contract instance, for Contract.at() lookups.
 const _addressRegistry = new Map<string, Contract>();
+// uint160-word → registered instance, for the packed move/ability/effect slots the engine
+// resolves every action. Dropped whole on any registry mutation; stubs are never cached.
+const _atByWord = new Map<bigint, Contract>();
 // Contracts with transient storage, reset at each transaction boundary.
 let _transientInstances: Contract[] = [];
 
@@ -665,6 +800,8 @@ export abstract class Contract {
     }
     let address: string;
     if (typeof value === 'bigint') {
+      const hit = _atByWord.get(value);
+      if (hit !== undefined) return hit;
       address = bigintToAddress(value);
     } else if (typeof value === 'string') {
       address = value;
@@ -674,6 +811,10 @@ export abstract class Contract {
     const normalized = address.toLowerCase();
     const instance = _addressRegistry.get(normalized);
     if (instance) {
+      if (typeof value === 'bigint') {
+        if (_atByWord.size > 4_096) _atByWord.clear();
+        _atByWord.set(value, instance);
+      }
       return instance;
     }
     // Return a lightweight stub for unregistered addresses (e.g. sentinel/tombstone).
@@ -685,6 +826,7 @@ export abstract class Contract {
   /** Clear the registry + transient-instance tracking (between battles/tests). */
   static clearRegistry(): void {
     _addressRegistry.clear();
+    _atByWord.clear();
     _transientInstances = [];
     currentCall = { callerStack: [], callDepth: 0, observers: [], entryStack: [] };
   }
@@ -700,8 +842,9 @@ export abstract class Contract {
    * Setting this auto-registers the instance in the global address registry.
    */
   private _address: string = ADDRESS_ZERO;
-  /** Reference to the Proxy wrapping this instance (set by constructor) */
-  private _proxy: any = null;
+  /** The Proxy wrapping this instance (set by constructor). Generated code emits `this._proxy`
+   *  wherever Solidity lets `this` escape as a value, since methods may run on the raw instance. */
+  protected _proxy: any = null;
 
   get _contractAddress(): string {
     return this._address;
@@ -719,12 +862,14 @@ export abstract class Contract {
       const current = _addressRegistry.get(prevLower);
       if (current === (this._proxy ?? this) || current === this) {
         _addressRegistry.delete(prevLower);
+        _atByWord.clear();
       }
     }
     if (addr !== ADDRESS_ZERO) {
       // Register the Proxy (not the raw instance) so Contract.at() returns
       // the msg.sender-propagating wrapper
       _addressRegistry.set(addr.toLowerCase(), (this._proxy ?? this) as Contract);
+      _atByWord.clear();
     }
   }
 
@@ -792,6 +937,10 @@ export abstract class Contract {
     // prop, so they are made once instead of per access. `fn` guards the entry against a method
     // being swapped on the instance (the CPU search shims `_freeStorageKey` this way).
     const wrapCache = new Map<string, { fn: Function; wrapped: Function }>();
+    // Unobserved `_` methods entered through the proxy: same caching, but no call semantics.
+    const directCache = new Map<string, { fn: Function; direct: Function }>();
+    // The frame this contract pushes as callee; rebuilt only when its address changes.
+    let ownFrame: CallFrame = { address: ADDRESS_ZERO, name: className };
     const proxy = new Proxy(this, {
       // Ensure property writes through the proxy go to the target (not the proxy object).
       // This is critical because external calls use `this = proxy` inside methods,
@@ -816,11 +965,14 @@ export abstract class Contract {
         return Reflect.set(target, prop, value, target);
       },
       get(target, prop, receiver) {
-        const value = Reflect.get(target, prop, receiver);
-        if (typeof prop === 'symbol') return value;
-        // One read of the observation signal serves both branches below — this trap is the
+        // The hottest read on a contract reference (identity compares, address packing).
+        if (prop === '_contractAddress') return self._address;
+        // One read of the observation signal serves every branch below — this trap is the
         // hottest path in a forked search, where nothing is ever attached.
         const observed = currentCall.observers.length > 0;
+        // Unobserved, the only accessor (`_msg`) is receiver-independent, so skip Reflect.get.
+        const value = observed ? Reflect.get(target, prop, receiver) : (target as any)[prop];
+        if (typeof prop === 'symbol') return value;
         if (typeof value !== 'function') {
           // State variable objects only need the deep tracking proxy while an observer is attached.
           if (observed && value !== null && typeof value === 'object') {
@@ -836,8 +988,21 @@ export abstract class Contract {
         // Internal/library (`_`) methods never change msg.sender or depth, so they
         // only need the wrapper when an observer wants to capture them; else fast-path
         // the raw fn (the historical no-wrap path).
-        if (propStr.charCodeAt(0) === UNDERSCORE && (!observed || !_captureInternal(propStr))) {
-          return value;
+        const isUnderscore = propStr.charCodeAt(0) === UNDERSCORE;
+        if (isUnderscore) {
+          if (observed) {
+            if (!_captureInternal(propStr)) return value;
+          } else {
+            // Nothing can observe this call, so run it on the raw instance: every `this.x` below
+            // it then skips this trap. Receiver is picked at call time in case the fn is held.
+            const d = directCache.get(propStr);
+            if (d !== undefined && d.fn === value) return d.direct;
+            const direct = function (this: any, ...callArgs: any[]) {
+              return value.apply(currentCall.observers.length > 0 ? proxy : self, callArgs);
+            };
+            directCache.set(propStr, { fn: value, direct });
+            return direct;
+          }
         }
 
         const cached = wrapCache.get(propStr);
@@ -849,13 +1014,15 @@ export abstract class Contract {
           // ── SEMANTICS ── a function of call *type* only, identical with or without
           // observers. Stack top = executing contract; a self-call or any `_` method
           // preserves msg.sender → internal.
-          const topFrame = call.callerStack[call.callerStack.length - 1];
-          const isInternal =
-            propStr.startsWith('_') || topFrame?.address === self._contractAddress;
+          const stack = call.callerStack;
+          const topFrame = stack[stack.length - 1];
+          const address = self._address;
+          const isInternal = isUnderscore || (topFrame !== undefined && topFrame.address === address);
 
           const preDepth = call.callDepth;
           if (!isInternal) {
-            call.callerStack.push({ address: self._contractAddress, name: className });
+            if (ownFrame.address !== address) ownFrame = { address, name: className };
+            stack.push(ownFrame);
             if (++call.callDepth === 1) resetAllTransient();
           }
 
@@ -867,7 +1034,7 @@ export abstract class Contract {
             entry = {
               caller: topFrame?.address ?? ADDRESS_ZERO,
               callerName: topFrame?.name ?? 'External',
-              target: self._contractAddress,
+              target: address,
               targetName: className,
               method: propStr,
               args: callArgs,
@@ -884,13 +1051,15 @@ export abstract class Contract {
           }
 
           try {
-            const result = value.apply(proxy, callArgs);
+            // Observed calls keep the proxy as `this` (state tracking + internal capture ride
+            // its traps); unobserved ones run on the raw instance and never re-enter the traps.
+            const result = value.apply(entry !== null ? proxy : self, callArgs);
             if (entry) entry.returnValue = result;
             return result;
           } finally {
             if (!isInternal) {
               call.callDepth--;
-              call.callerStack.pop();
+              stack.pop();
             }
             if (entry) {
               call.entryStack.pop();

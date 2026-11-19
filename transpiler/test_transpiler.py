@@ -405,7 +405,7 @@ class TestYulTranspiler(unittest.TestCase):
         """Test hex literal parsing and generation."""
         yul_code = 'let x := 0xff'
         result = self.transpiler.transpile(yul_code)
-        self.assertIn('BigInt("0xff")', result)
+        self.assertIn('0xffn', result)
 
     def test_let_without_value(self):
         """Test let declaration without initial value."""

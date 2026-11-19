@@ -13,7 +13,10 @@ if TYPE_CHECKING:
 
 # Scanned names generated files import from the runtime instead of viem: wrapped viem
 # functions (memoized / fast-path, byte-identical) plus runtime-only helpers like '__ik'.
-RUNTIME_PROVIDED = frozenset({'keccak256', 'encodePacked', 'encodeAbiParameters', '__ik'})
+RUNTIME_PROVIDED = frozenset({
+    'keccak256', 'encodePacked', 'encodeAbiParameters', 'decodeAbiParameters', '__ik',
+    '__lazyRecord', '__lazyZeroRecord', '__lazyRecordOf',
+})
 
 
 class ImportGenerator:

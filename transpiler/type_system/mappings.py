@@ -64,11 +64,11 @@ def get_type_max(type_name: str) -> str:
     if type_name.startswith('uint'):
         bits = int(type_name[4:]) if len(type_name) > 4 else 256
         max_val = (2 ** bits) - 1
-        return f'BigInt("{max_val}")'
+        return f'{max_val}n'
     elif type_name.startswith('int'):
         bits = int(type_name[3:]) if len(type_name) > 3 else 256
         max_val = (2 ** (bits - 1)) - 1
-        return f'BigInt("{max_val}")'
+        return f'{max_val}n'
     return '0n'
 
 
@@ -87,5 +87,5 @@ def get_type_min(type_name: str) -> str:
     elif type_name.startswith('int'):
         bits = int(type_name[3:]) if len(type_name) > 3 else 256
         min_val = -(2 ** (bits - 1))
-        return f'BigInt("{min_val}")'
+        return f'({min_val}n)'
     return '0n'
