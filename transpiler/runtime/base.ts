@@ -30,6 +30,35 @@ export function keccak256(value: `0x${string}` | Uint8Array): `0x${string}` {
   return h;
 }
 
+/** `uint256(keccak256(x))`: the digest as a bigint, without re-parsing the memoized hex each call. */
+const KECCAK_WORD_CACHE = new Map<string, bigint>();
+export function __keccakWord(value: `0x${string}` | Uint8Array): bigint {
+  if (typeof value !== 'string') return BigInt(viemKeccak256(value));
+  let w = KECCAK_WORD_CACHE.get(value);
+  if (w === undefined) {
+    if (KECCAK_WORD_CACHE.size > 10_000) KECCAK_WORD_CACHE.clear();
+    w = BigInt(keccak256(value));
+    KECCAK_WORD_CACHE.set(value, w);
+  }
+  return w;
+}
+
+// Slot bits of a contract-ref / enum / address member. Keyed by the address string: a cached
+// word on Contract itself changes the hot object's shape and measurably slows the engine.
+const ADDR_WORD_CACHE = new Map<string, bigint>();
+export function __addrWord(v: unknown): bigint {
+  if (v === null || v === undefined) return 0n;
+  const a = typeof v === 'object' ? (v as { _contractAddress?: unknown })._contractAddress : v;
+  if (typeof a !== 'string') return BigInt((a ?? 0n) as number | bigint);
+  let w = ADDR_WORD_CACHE.get(a);
+  if (w === undefined) {
+    if (ADDR_WORD_CACHE.size > 4_096) ADDR_WORD_CACHE.clear();
+    w = BigInt(a);
+    ADDR_WORD_CACHE.set(a, w);
+  }
+  return w;
+}
+
 // =============================================================================
 // INTERNED MAPPING KEYS
 // =============================================================================

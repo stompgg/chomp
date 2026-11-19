@@ -375,7 +375,10 @@ class TypeConverter(BaseGenerator):
                 bigint_expr = bytes_bitwise
             else:
                 expr = generate_expression_fn(inner_expr)
-                bigint_expr = self._ensure_bigint(expr, inner_expr)
+                if expr.startswith('keccak256(') and self._is_single_group(expr[len('keccak256'):]):
+                    bigint_expr = '__keccakWord' + expr[len('keccak256'):]
+                else:
+                    bigint_expr = self._ensure_bigint(expr, inner_expr)
             # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
             width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
             if width_str.isdigit():
@@ -424,12 +427,11 @@ class TypeConverter(BaseGenerator):
         # result next to `& mask`, so anything but a single parenthesized group gets its own parens.
         if expr.startswith('(') and ('n)' in expr or '1n' in expr):
             return expr if self._is_single_group(expr) else f'({expr})'
-        # A shift / bitwise / multiplicative op with an integer-literal operand: the literal
-        # emits as a bigint, and JS throws on mixed operands, so the result is a bigint.
+        # A shift / bitwise / multiplicative op with a statically-bigint operand: JS throws on
+        # mixed operands, so the result is a bigint.
         if (isinstance(node, BinaryOperation)
                 and node.operator in ('>>', '<<', '&', '|', '^', '*', '/', '%')
-                and any(isinstance(side, Literal) and side.kind in ('number', 'hex')
-                        for side in (node.left, node.right))):
+                and any(self._is_static_bigint(side) for side in (node.left, node.right))):
             return f'({expr})'
         # Statically bigint by type: a uint/int identifier, or a member access that
         # resolves to a numeric field (both transpile to bigint).
@@ -441,6 +443,18 @@ class TypeConverter(BaseGenerator):
                     and (resolved.name.startswith('uint') or resolved.name.startswith('int'))):
                 return expr
         return f'BigInt({expr})'
+
+    def _is_static_bigint(self, node: 'Expression') -> bool:
+        """An integer literal, a uint/int identifier, or a member that resolves to a numeric field."""
+        if isinstance(node, Literal):
+            return node.kind in ('number', 'hex')
+        if isinstance(node, Identifier):
+            return self.is_bigint_typed_identifier(node)
+        if isinstance(node, MemberAccess):
+            resolved = self.resolve_access_type(node)
+            return (resolved is not None and not resolved.is_array and not resolved.is_mapping
+                    and (resolved.name.startswith('uint') or resolved.name.startswith('int')))
+        return False
 
     @staticmethod
     def _is_single_group(expr: str) -> bool:

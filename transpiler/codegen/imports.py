@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 # functions (memoized / fast-path, byte-identical) plus runtime-only helpers like '__ik'.
 RUNTIME_PROVIDED = frozenset({
     'keccak256', 'encodePacked', 'encodeAbiParameters', 'decodeAbiParameters', '__ik',
-    '__lazyRecord', '__lazyZeroRecord', '__lazyRecordOf',
+    '__lazyRecord', '__lazyZeroRecord', '__lazyRecordOf', '__keccakWord', '__addrWord',
 })
 
 

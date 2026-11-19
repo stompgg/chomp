@@ -144,7 +144,8 @@ class TypeScriptCodeGenerator:
         content = '\n'.join(output)
         for viem_fn in ('keccak256', 'encodePacked', 'encodeAbiParameters',
                         'decodeAbiParameters', 'parseAbiParameters', 'stringToHex',
-                        '__ik', '__lazyRecord', '__lazyZeroRecord', '__lazyRecordOf'):
+                        '__ik', '__lazyRecord', '__lazyZeroRecord', '__lazyRecordOf',
+                        '__keccakWord', '__addrWord'):
             if viem_fn in content:
                 self._ctx.viem_imports_used.add(viem_fn)
 
