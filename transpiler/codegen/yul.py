@@ -679,7 +679,7 @@ class YulTranspiler:
             bits = t[3:] or '256'
             return f'BigInt.asUintN({bits}, BigInt({access}))'
         # enums are numbers; every other user-defined name is a contract ref
-        return f'BigInt({access}?._contractAddress ?? {access} ?? 0n)'
+        return f'BigInt(({access} as any)?._contractAddress ?? {access} ?? 0n)'
 
     @staticmethod
     def _member_unpack(word: str, tn, bits: int) -> Optional[str]:

@@ -370,8 +370,12 @@ class TypeConverter(BaseGenerator):
         # For numeric types (uint160, int128, etc.), mask to the correct bit width.
         # Solidity truncates on cast; BigInt does not, so we must mask explicitly.
         if type_name.startswith('uint') or type_name.startswith('int'):
-            expr = generate_expression_fn(inner_expr)
-            bigint_expr = self._ensure_bigint(expr, inner_expr)
+            bytes_bitwise = self._bytes_bitwise_as_bigint(inner_expr, generate_expression_fn)
+            if bytes_bitwise is not None:
+                bigint_expr = bytes_bitwise
+            else:
+                expr = generate_expression_fn(inner_expr)
+                bigint_expr = self._ensure_bigint(expr, inner_expr)
             # Extract bit width (e.g., 'uint160' -> 160, 'int32' -> 32)
             width_str = type_name[4:] if type_name.startswith('uint') else type_name[3:]
             if width_str.isdigit():
@@ -388,6 +392,22 @@ class TypeConverter(BaseGenerator):
 
         # Default: generate the inner expression
         return generate_expression_fn(inner_expr)
+
+    def _bytes_bitwise_as_bigint(self, node: 'Expression', generate_expression_fn) -> Optional[str]:
+        """``a ^ b`` / ``a & b`` / ``a | b`` over fixed-bytes values, as a bigint expression.
+
+        bytesN values are hex strings in TS, where a bitwise operator would coerce them to int32.
+        """
+        if not (isinstance(node, BinaryOperation) and node.operator in ('^', '&', '|')):
+            return None
+        for side in (node.left, node.right):
+            resolved = self.resolve_access_type(side)
+            name = (resolved.name or '') if resolved is not None else ''
+            if not name.startswith('bytes') or resolved.is_array:
+                return None
+        left = generate_expression_fn(node.left)
+        right = generate_expression_fn(node.right)
+        return f'(BigInt({left}) {node.operator} BigInt({right}))'
 
     def _ensure_bigint(self, expr: str, node: 'Expression') -> str:
         """Wrap expression in BigInt() only if it's not already a bigint expression.
